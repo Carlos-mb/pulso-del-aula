@@ -1,10 +1,12 @@
 // Vista única del docente: lo que se proyecta y, ocultos, los controles.
 // Atajos: Espacio/Intro = acción principal · ← → = anterior/siguiente ·
-//         Esc = volver a los temas · 1-9 = elegir tema (en la pantalla inicial)
+//         Esc = volver a los temas · 1-9 = elegir tema (en la pantalla inicial) ·
+//         H = ocultar / mostrar la barra de controles
 
 const app = document.getElementById('app');
 const pie = document.getElementById('pie');
 const barra = document.getElementById('barra');
+const botonMostrar = document.getElementById('mostrar');
 const toast = document.getElementById('toast');
 let vista = { fase: 'inicio', temas: [] };
 let refrescar;
@@ -281,20 +283,36 @@ function actualizarBarra(d) {
     b.push(boton('Volver a los temas ▶', () => ejecutar('siguiente'), 'principal'));
   }
   if (d.fase !== 'inicio') b.push(boton('Temas', () => ejecutar('inicio')));
-  b.push(el('span', { class: 'atajos' }, 'Espacio: avanzar · ← →: pregunta · Esc: temas'));
+  b.push(boton('Ocultar ▼', () => ponerBarraOculta(true)));
+  b.push(el('span', { class: 'atajos' }, 'Espacio: avanzar · ← →: pregunta · Esc: temas · H: ocultar'));
   barra.replaceChildren(...b);
 }
 
+// La barra aparece al mover el ratón y se oculta sola. Si tapa contenido, el docente la puede
+// ocultar del todo (botón «Ocultar» o tecla H): entonces, al mover el ratón, solo aparece un botoncito
+// en la esquina para volver a mostrarla.
 let ocultar;
+let barraOculta = false;
 function mostrarBarra() {
-  barra.classList.remove('oculta');
+  (barraOculta ? botonMostrar : barra).classList.remove('oculta');
   document.body.classList.remove('sin-cursor');
   clearTimeout(ocultar);
   ocultar = setTimeout(() => {
     barra.classList.add('oculta');
+    botonMostrar.classList.add('oculta');
     document.body.classList.add('sin-cursor');
   }, 3000);
 }
+
+function ponerBarraOculta(oculta) {
+  barraOculta = oculta;
+  barra.classList.add('oculta');
+  botonMostrar.classList.add('oculta');
+  if (!oculta) mostrarBarra();
+}
+
+botonMostrar.addEventListener('mousedown', e => e.preventDefault());
+botonMostrar.addEventListener('click', () => ponerBarraOculta(false));
 document.addEventListener('mousemove', mostrarBarra);
 mostrarBarra();
 
@@ -304,7 +322,8 @@ document.addEventListener('keydown', e => {
   // Escribiendo en un campo (la clave): las teclas son suyas, no atajos (si no, Intro no envía el formulario).
   if (e.target instanceof Element && e.target.closest('input, textarea, select')) return;
   const enTema = vista.fase !== 'inicio';
-  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); accionPrincipal(); }
+  if (e.key === 'h' || e.key === 'H') ponerBarraOculta(!barraOculta);
+  else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); accionPrincipal(); }
   else if (e.key === 'ArrowRight' && enTema) ejecutar('siguiente');
   else if (e.key === 'ArrowLeft' && enTema) ejecutar('anterior');
   else if (e.key === 'Escape' && enTema) ejecutar('inicio');

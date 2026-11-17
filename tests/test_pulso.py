@@ -123,6 +123,8 @@ def cliente(reloj):
 
 
 def responde(alumno, token, valor):
+    # El tema «redes» pide alias: se pone uno si hace falta (en los demás temas no hace nada).
+    alumno.post("/api/alias", json={"token": token, "alias": "alumno-" + token[:6]})
     return alumno.post("/api/responder", json={"token": token, "respuesta": valor})
 
 
@@ -361,9 +363,8 @@ def test_conectados(cliente, reloj):
 
     assert conectados() == 0
     docente.post("/api/docente/tema/redes")
-    estado(alumno, token=TOKEN_A)
-    estado(alumno, token=TOKEN_B)
-    estado(alumno, token=TOKEN_A)        # el mismo navegador no cuenta dos veces
+    conecta(alumno, TOKEN_A, TOKEN_B)
+    conecta(alumno, TOKEN_A)             # el mismo navegador no cuenta dos veces
     estado(alumno)                       # sin token (p. ej. la pantalla del docente): no cuenta
     estado(alumno, token="corto")        # token no válido: se ignora
     assert conectados() == 2
@@ -372,7 +373,7 @@ def test_conectados(cliente, reloj):
     estado(alumno, token=TOKEN_A)        # A sigue consultando; B ya no
     reloj.t += 6
     assert conectados() == 1             # B lleva 12 s sin aparecer
-    estado(alumno, token=TOKEN_C)
+    conecta(alumno, TOKEN_C)
     assert conectados() == 2
 
 
@@ -393,7 +394,9 @@ def test_el_alumno_no_ve_el_numero_de_conectados(cliente):
 
 # ---------- cierre automático cuando han votado todos los conectados ----------
 def conecta(alumno, *tokens):
+    """Conecta a los alumnos (con alias, por si el tema lo pide, como «redes»)."""
     for t in tokens:
+        alumno.post("/api/alias", json={"token": t, "alias": "alumno-" + t[:6]})
         estado(alumno, token=t)
 
 
@@ -1182,7 +1185,8 @@ def ranking_docente(docente):
 
 def test_la_identificacion_es_una_opcion_del_tema(tmp_path):
     temas = cargar(PREGUNTAS)
-    assert temas["multiopcion"].identificacion and not temas["redes"].identificacion
+    assert temas["redes"].identificacion and temas["multiopcion"].identificacion
+    assert not temas["imagenes"].identificacion
     d = escribe(tmp_path, IDENT.replace("identificacion: true", "identificacion: 1"))
     with pytest.raises(ErrorBanco, match="identificacion"):
         cargar(d)
@@ -1204,7 +1208,8 @@ def test_el_alumno_ve_que_debe_poner_alias_y_no_puede_responder_sin_el(ident):
     v = estado(alumno, token=TOKEN_A)
     assert v["identificacion"] is True and "alias" not in v
     docente.post("/api/docente/empezar")
-    assert responde(alumno, TOKEN_A, 1).status_code == 409
+    sin_alias = alumno.post("/api/responder", json={"token": TOKEN_A, "respuesta": 1})
+    assert sin_alias.status_code == 409
     assert alias(alumno, TOKEN_A, "Ana").status_code == 200
     assert estado(alumno, token=TOKEN_A)["alias"] == "Ana"
     assert responde(alumno, TOKEN_A, 1).status_code == 200
@@ -1391,3 +1396,25 @@ def test_alias_en_modo_remoto_exige_estar_admitido(tmp_path, reloj):
         assert alias(alumno, TOKEN_A, "Ana").status_code == 401
         entra(alumno, TOKEN_A, app.state.sesion.codigo)
         assert alias(alumno, TOKEN_A, "Ana").status_code == 200
+
+
+def test_con_identificacion_solo_cuentan_como_conectados_los_que_tienen_alias(ident):
+    docente, alumno = ident
+    docente.post("/api/docente/tema/r")
+    estado(alumno, token=TOKEN_A)
+    estado(alumno, token=TOKEN_B)
+    assert docente.get("/api/docente/estado").json()["conectados"] == 0   # aún sin alias
+    alias(alumno, TOKEN_A, "Ana")
+    assert docente.get("/api/docente/estado").json()["conectados"] == 1
+    docente.post("/api/docente/empezar")
+    responde(alumno, TOKEN_A, 1)        # B sigue sin alias: no retrasa el cierre por «todos han votado»
+    assert estado(alumno, token=TOKEN_A)["fase"] == "cerrada"
+    assert estado(alumno, token=TOKEN_A)["motivo_cierre"] == "todos"
+
+
+def test_sin_identificacion_cuentan_todos_los_conectados(ident):
+    docente, alumno = ident
+    docente.post("/api/docente/tema/s")
+    estado(alumno, token=TOKEN_A)
+    estado(alumno, token=TOKEN_B)
+    assert docente.get("/api/docente/estado").json()["conectados"] == 2

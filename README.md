@@ -125,6 +125,8 @@ temas:
   cambiar una vez elegido, ni responder sin él. Si el alumno recarga la página o pierde la conexión, **conserva**
   su alias y sus puntos (el navegador guarda el mismo token). Se pierde si borra los datos del navegador, usa otro
   dispositivo o se reinicia el servidor. Al volver a la lista de temas se olvidan todos los alias.
+- **Conectados:** en un tema con identificación solo cuentan los alumnos que ya han puesto el alias. Quien aún
+  lo está escribiendo no aparece en el contador ni retrasa el cierre por «han votado todos».
 - **Puntos por pregunta:** 100 por acertar (en `multiopcion`, la parte proporcional de la puntuación) y un extra
   de **10, 8, 5, 2 y 1** para los cinco primeros en **acertar del todo**. Las encuestas no puntúan.
 - **Orden de llegada:** cuenta el momento del **último envío**. Si un alumno cambia su respuesta, pasa al final
@@ -149,11 +151,15 @@ La barra de controles aparece al mover el ratón y se oculta sola a los 3 segund
 | `←` / `→` | Pregunta anterior / siguiente (con la votación cerrada) |
 | `Esc` | Volver a la lista de temas |
 | `1`–`9` | Elegir tema (pantalla inicial) |
+| `H` | Ocultar / mostrar la barra de controles |
 
 - Volver a una pregunta ya cerrada conserva sus resultados y **no** la reabre.
 - «Reabrir votación» conserva las respuestas y reinicia el tiempo. Esa pregunta ya no se cierra por
   «han votado todos» (los conectados ya habían votado): solo por tiempo o a mano.
 - «Borrar respuestas» deja la pregunta a cero y la abre de nuevo.
+- Si la barra tapa contenido, el botón **Ocultar** (o la tecla `H`) la oculta del todo: al mover el ratón solo
+  aparece un botón «▲ Controles» en la esquina para volver a mostrarla (también con `H`). Los atajos de teclado
+  siguen funcionando.
 - La pantalla se ajusta sola: si el contenido no cabe en la ventana, reduce el tamaño de letra.
 
 ## Modo remoto (túnel de Cloudflare)

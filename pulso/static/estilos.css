@@ -302,7 +302,11 @@ body.docente .img-opcion { max-height: 4em; }
   box-shadow: 0 18px 58px #0000006b;
   font-size: 15px; transition: opacity .3s; z-index: 10;
 }
-.barra.oculta { opacity: 0; pointer-events: none; }
+.barra.oculta, .mostrar.oculta { opacity: 0; pointer-events: none; }
+.mostrar {
+  position: fixed; right: 1em; bottom: 1em; z-index: 10; font-size: 15px;
+  background: #0c0e0df5; border-color: var(--line-bright); transition: opacity .3s, border-color .16s, background .16s;
+}
 .btn {
   font: inherit; font-weight: 800; color: var(--text); background: #10130fb8;
   border: 1px solid #a9b2c842; padding: .55em .9em; cursor: pointer;

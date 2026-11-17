@@ -25,7 +25,7 @@
 # - Con `identificacion: true` en el tema, cada alumno elige un alias al entrar y hay ranking:
 #   100 puntos por pregunta acertada (la parte proporcional en `multiopcion`) y un extra de
 #   10, 8, 5, 2 y 1 para los cinco primeros en acertar del todo. El ranking de los 5 primeros
-#   sale entre pregunta y pregunta, y el completo en el resumen. Ver el tema 'multiopcion'.
+#   sale entre pregunta y pregunta, y el completo en el resumen. Ver los temas 'redes' y 'multiopcion'.
 # - Si una opción puede confundirse con un valor YAML (Sí, No, On, Off...),
 #   entrecomíllala.
 
@@ -33,6 +33,7 @@ temas:
   redes:
     titulo: "Redes básicas"
     tiempo: 30                      # por defecto, 30 s por pregunta
+    identificacion: true            # alias de los alumnos y ranking
     preguntas:
       - texto: "¿Qué capa del modelo OSI se encarga del enrutamiento?"
         opciones:

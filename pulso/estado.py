@@ -236,9 +236,15 @@ class Sesion:
             self._ultima_poda = ahora
             self.vistos = {t: v for t, v in self.vistos.items() if ahora - v < 60}
 
-    def conectados(self) -> int:
+    def _tokens_conectados(self) -> list[str]:
+        """Navegadores que han consultado hace poco. En un test con identificación, solo los que ya
+        tienen alias: quien aún lo está escribiendo no cuenta ni retrasa el cierre de la votación."""
         limite = self.reloj() - SEGUNDOS_PRESENCIA
-        return sum(1 for v in self.vistos.values() if v >= limite)
+        return [t for t, v in self.vistos.items()
+                if v >= limite and (not self.identificacion or t in self.alias)]
+
+    def conectados(self) -> int:
+        return len(self._tokens_conectados())
 
     # ---------- acción del alumno ----------
     def responder(self, token: str, respuesta: Any) -> None:
@@ -277,8 +283,7 @@ class Sesion:
 
     def _todos_han_votado(self) -> bool:
         """Hay alumnos conectados y todos ellos han respondido a la pregunta actual."""
-        limite = self.reloj() - SEGUNDOS_PRESENCIA
-        conectados = [t for t, v in self.vistos.items() if v >= limite]
+        conectados = self._tokens_conectados()
         resp = self._resp()
         return bool(conectados) and all(t in resp for t in conectados)
 

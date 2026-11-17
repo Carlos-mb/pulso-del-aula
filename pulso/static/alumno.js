@@ -47,6 +47,10 @@ function enunciado(p) {
 }
 
 function vistaAbierta(d) {
+  return d.pregunta.multiple ? vistaAbiertaMultiple(d) : vistaAbiertaUna(d);
+}
+
+function vistaAbiertaUna(d) {
   const p = d.pregunta;
   const mia = d.mi_respuesta;
   return [
@@ -67,9 +71,97 @@ function vistaAbierta(d) {
   ];
 }
 
+// Varias opciones: marcar no envía nada; la respuesta cuenta al pulsar «Enviar».
+// La selección se guarda aquí (no en el DOM) porque la página se redibuja cuando
+// llegan datos nuevos del servidor, y no debe perderse lo que el alumno aún no ha enviado.
+let seleccion = { id: null, nose: false, marcas: new Set() };
+
+function seleccionDe(d) {
+  const id = d.pregunta.id;
+  if (seleccion.id !== id) {
+    const mia = d.mi_respuesta;
+    seleccion = {
+      id,
+      nose: mia === NOSE,
+      marcas: new Set(Array.isArray(mia) ? mia : []),
+    };
+  }
+  return seleccion;
+}
+
+function respuestaDe(sel) {
+  return sel.nose ? NOSE : [...sel.marcas].sort((a, b) => a - b);
+}
+
+function igualesRespuestas(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function vistaAbiertaMultiple(d) {
+  const p = d.pregunta;
+  const sel = seleccionDe(d);
+  const mia = d.mi_respuesta;
+  const botones = [];
+  const botonNose = p.con_nose && el('button', {
+    class: 'opcion nose', role: 'checkbox',
+    onclick: () => { sel.nose = !sel.nose; if (sel.nose) sel.marcas.clear(); sincronizar(); },
+  }, ETIQUETA_NOSE);
+  const botonEnviar = el('button', {
+    class: 'enviar',
+    onclick: () => enviar(respuestaDe(sel)),
+  }, 'Enviar');
+  const estado = el('p', { class: 'estado' });
+
+  p.opciones.forEach((o, i) => {
+    const marca = el('span', { class: 'casilla' });
+    botones.push([i, marca, el('button', {
+      class: 'opcion', role: 'checkbox',
+      onclick: () => {
+        if (sel.marcas.has(i)) sel.marcas.delete(i); else sel.marcas.add(i);
+        sel.nose = false;           // «no lo sé» es exclusiva
+        sincronizar();
+      },
+    }, marca, el('span', { class: 'letra' }, LETRAS[i]), contenidoOpcion(o))]);
+  });
+
+  function sincronizar() {
+    for (const [i, marca, b] of botones) {
+      const on = sel.marcas.has(i);
+      b.classList.toggle('elegida', on);
+      b.setAttribute('aria-checked', on);
+      marca.textContent = on ? '☑' : '☐';
+    }
+    if (botonNose) {
+      botonNose.classList.toggle('elegida', sel.nose);
+      botonNose.setAttribute('aria-checked', sel.nose);
+    }
+    const actual = respuestaDe(sel);
+    const hayMarcas = sel.nose || sel.marcas.size > 0;
+    const enviada = mia !== undefined && igualesRespuestas(actual, mia);
+    botonEnviar.disabled = !hayMarcas || enviada;
+    estado.className = 'estado' + (enviada ? ' ok' : '');
+    estado.textContent = enviada
+      ? '✓ respuesta enviada · puedes cambiarla y volver a enviar hasta que se cierre la votación'
+      : mia !== undefined
+        ? 'has cambiado la respuesta · pulsa Enviar para que cuente'
+        : (p.tipo === 'encuesta' ? 'encuesta · ' : '') + 'marca todas las que correspondan y pulsa Enviar';
+  }
+  sincronizar();
+
+  return [
+    cabecera(d),
+    enunciado(p),
+    el('div', { class: 'opciones', role: 'group' }, botones.map(x => x[2])),
+    botonNose,
+    botonEnviar,
+    estado,
+  ];
+}
+
 const MENSAJE_CATEGORIA = {
   acierto: ['ok', '✓ Tu respuesta era correcta.'],
   error: ['mal', '✗ Tu respuesta no era la correcta. Mira la pantalla.'],
+  parcial: ['parcial', '≈ Tu respuesta era parcialmente correcta. Mira la pantalla.'],
   nose: ['nose', '? Pediste que se explique. ¡Atento a la explicación!'],
 };
 

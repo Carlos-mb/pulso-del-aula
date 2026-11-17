@@ -30,7 +30,7 @@ def ip_lan() -> str:
 
 class Respuesta(BaseModel):
     token: str = Field(min_length=8, max_length=64)
-    respuesta: StrictInt | StrictStr
+    respuesta: StrictInt | StrictStr | list[StrictInt]
 
 
 def crear_app(

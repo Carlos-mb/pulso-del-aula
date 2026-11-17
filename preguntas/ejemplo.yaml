@@ -18,6 +18,10 @@
 #   sirve para sondear la experiencia u opinión del aula y solo muestra el reparto
 #   por opción. No cuenta en los aciertos del resumen. Para ofrecer también
 #   «No lo sé / quiero que se explique» añade `nose: true`. Ver el tema 'experiencia'.
+# - Con `tipo: multiopcion` el alumno marca varias opciones y pulsa «Enviar»; `correcta` es una
+#   lista (`correcta: [1, 3]`). La puntuación va de 0 a 1: correctas marcadas menos incorrectas
+#   marcadas, entre el total de correctas (mínimo 0). Resultado: acierto, parcial, error o «no lo sé».
+#   En una encuesta, `multiple: true` permite marcar varias. Ver los temas 'multiopcion' y 'experiencia'.
 # - Si una opción puede confundirse con un valor YAML (Sí, No, On, Off...),
 #   entrecomíllala.
 
@@ -131,3 +135,27 @@ temas:
         texto: "¿Quieres que dediquemos una sesión a repasar la terminal?"
         nose: true
         opciones: ["Sí", "No"]
+
+      - tipo: encuesta
+        multiple: true
+        texto: "Estudios o trabajo previos (marca todos los que correspondan)"
+        opciones:
+          - "Ninguno"
+          - "Curso o FP"
+          - "Universidad"
+          - "He trabajado en el sector"
+
+  multiopcion:
+    titulo: "Varias respuestas correctas (prueba)"
+    preguntas:
+      - tipo: multiopcion
+        texto: "¿Cuáles de estas direcciones son IPv4 **privadas**?"
+        opciones: ["10.0.0.5", "8.8.8.8", "192.168.1.20", "172.16.4.9"]
+        correcta: [1, 3, 4]
+        explicacion: "Los rangos privados son `10.0.0.0/8`, `172.16.0.0/12` y `192.168.0.0/16`."
+
+      - tipo: multiopcion
+        texto: "Marca los protocolos que trabajan en la capa de **aplicación**"
+        tiempo: 40
+        opciones: ["HTTP", "IP", "DNS", "Ethernet"]
+        correcta: [1, 3]

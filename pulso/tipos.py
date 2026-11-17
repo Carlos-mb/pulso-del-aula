@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_validator
 
 NOSE = "nose"
 ETIQUETA_NOSE = "No lo sé / quiero que se explique"
@@ -82,6 +82,11 @@ class PreguntaDeOpciones(PreguntaBase):
         """¿Se ofrece la opción «No lo sé / quiero que se explique»?"""
         return True
 
+    @property
+    def con_varias(self) -> bool:
+        """¿Puede cada alumno marcar varias opciones?"""
+        return False
+
     def imagenes(self) -> list[str]:
         return super().imagenes() + [o.imagen for o in self.opciones if o.imagen]
 
@@ -94,23 +99,37 @@ class PreguntaDeOpciones(PreguntaBase):
             "imagen": url_media(self.imagen),
             "opciones": [o.publica() for o in self.opciones],
             "con_nose": self.con_nose,
+            "multiple": self.con_varias,
         }
 
     def validar_respuesta(self, r: Any) -> Any:
+        """Una opción (índice desde 0), o «nose». Con varias: lista de índices sin repetir."""
         if r == NOSE and self.con_nose:
             return NOSE
-        if isinstance(r, int) and not isinstance(r, bool) and 0 <= r < len(self.opciones):
+        n = len(self.opciones)
+        if self.con_varias:
+            if (isinstance(r, list) and 1 <= len(r) <= n
+                    and all(isinstance(i, int) and not isinstance(i, bool) and 0 <= i < n for i in r)
+                    and len(set(r)) == len(r)):
+                return sorted(r)
+        elif isinstance(r, int) and not isinstance(r, bool) and 0 <= r < n:
             return r
         raise ValueError("respuesta no válida")
 
     def _reparto(self, respuestas: list[Any]) -> dict:
-        """Número y porcentaje de respuestas de cada opción y de «no lo sé»."""
+        """Número y porcentaje de respuestas de cada opción y de «no lo sé».
+
+        El porcentaje es sobre el número de alumnos que respondieron; si se pueden marcar
+        varias opciones, los porcentajes de las opciones no suman 100 %.
+        """
         n = len(respuestas)
 
         def pct(x: int) -> float:
             return round(100 * x / n, 1) if n else 0.0
 
-        votos = Counter(respuestas)
+        votos: Counter = Counter()
+        for x in respuestas:
+            votos.update(x if isinstance(x, list) else [x])
         return {
             "total": n,
             "opciones": [
@@ -132,6 +151,22 @@ class UnaOpcion(PreguntaDeOpciones):
         ("error", "Error"),
         ("nose", "No lo sé"),
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _una_sola(cls, v: Any) -> Any:
+        if isinstance(v, dict):
+            if "multiple" in v:
+                raise ValueError(
+                    "'multiple' no se usa en preguntas con respuesta correcta: "
+                    "para marcar varias opciones usa 'tipo: multiopcion'"
+                )
+            if isinstance(v.get("correcta"), list):
+                raise ValueError(
+                    "'correcta' debe ser un solo número; para varias correctas "
+                    "usa 'tipo: multiopcion' con 'correcta: [1, 3]'"
+                )
+        return v
 
     @model_validator(mode="after")
     def _coherente(self) -> "UnaOpcion":
@@ -159,6 +194,88 @@ class UnaOpcion(PreguntaDeOpciones):
             for k, e in self.CATEGORIAS
         ]
         r["correcta"] = self.correcta - 1
+        r["correctas"] = [self.correcta - 1]
+        return r
+
+
+class MultiOpcion(PreguntaDeOpciones):
+    """Test con varias opciones correctas: el alumno marca todas las que crea. `correcta` es una lista.
+
+    Puntuación entre 0 y 1: (correctas marcadas - incorrectas marcadas) / total de correctas,
+    con mínimo 0. Categorías: acierto (todas las correctas y ninguna incorrecta), parcial
+    (puntuación entre 0 y 1, sin llegar a ninguno de los extremos), error y «no lo sé».
+    """
+
+    tipo: Literal["multiopcion"]
+    correcta: list[StrictInt]
+
+    CATEGORIAS: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("acierto", "Aciertos"),
+        ("parcial", "Parcial"),
+        ("error", "Error"),
+        ("nose", "No lo sé"),
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lista(cls, v: Any) -> Any:
+        if isinstance(v, dict):
+            if "multiple" in v:
+                raise ValueError(
+                    "'multiple' sobra: el tipo 'multiopcion' ya permite marcar varias opciones"
+                )
+            if "correcta" in v and not isinstance(v["correcta"], list):
+                raise ValueError(
+                    "'correcta' debe ser una lista de números (por ejemplo 'correcta: [1, 3]'); "
+                    "con una sola correcta usa el tipo 'una_opcion'"
+                )
+        return v
+
+    @model_validator(mode="after")
+    def _coherente(self) -> "MultiOpcion":
+        n = len(self.opciones)
+        if not self.correcta:
+            raise ValueError("'correcta' necesita al menos una opción")
+        if len(set(self.correcta)) != len(self.correcta):
+            raise ValueError("'correcta' tiene números repetidos")
+        if any(not 1 <= c <= n for c in self.correcta):
+            raise ValueError(
+                f"los números de 'correcta' deben estar entre 1 y {n} "
+                "(la primera opción es la 1)"
+            )
+        return self
+
+    @property
+    def con_varias(self) -> bool:
+        return True
+
+    def puntuacion(self, marcadas: list[int]) -> float:
+        buenas = {c - 1 for c in self.correcta}
+        aciertos = len(buenas & set(marcadas))
+        falladas = len(set(marcadas) - buenas)
+        return max(0.0, (aciertos - falladas) / len(buenas))
+
+    def evaluar(self, r: Any) -> tuple[str, float]:
+        """Devuelve (categoría, puntuación entre 0 y 1)."""
+        if r == NOSE:
+            return "nose", 0.0
+        p = self.puntuacion(r)
+        if p >= 1.0:
+            return "acierto", 1.0
+        if p > 0.0:
+            return "parcial", p
+        return "error", 0.0
+
+    def resultados(self, respuestas: list[Any]) -> dict:
+        r = self._reparto(respuestas)
+        cats = Counter(self.evaluar(x)[0] for x in respuestas)
+        n = r["total"]
+        r["categorias"] = [
+            {"clave": k, "etiqueta": e, "n": cats[k], "pct": round(100 * cats[k] / n, 1) if n else 0.0}
+            for k, e in self.CATEGORIAS
+        ]
+        r["correcta"] = None
+        r["correctas"] = [c - 1 for c in self.correcta]
         return r
 
 
@@ -172,6 +289,8 @@ class Encuesta(PreguntaDeOpciones):
 
     tipo: Literal["encuesta"]
     nose: StrictBool = False
+    # Si es verdadero, cada alumno marca todas las opciones que correspondan.
+    multiple: StrictBool = False
 
     puntua: ClassVar[bool] = False
 
@@ -186,6 +305,10 @@ class Encuesta(PreguntaDeOpciones):
     def con_nose(self) -> bool:
         return self.nose
 
+    @property
+    def con_varias(self) -> bool:
+        return self.multiple
+
     def evaluar(self, r: Any) -> tuple[str, float]:
         raise NotImplementedError("una encuesta no se evalúa")
 
@@ -193,10 +316,13 @@ class Encuesta(PreguntaDeOpciones):
         r = self._reparto(respuestas)
         r["categorias"] = []
         r["correcta"] = None
+        r["correctas"] = []
+        r["multiple"] = self.multiple
         return r
 
 
 TIPOS: dict[str, type[PreguntaBase]] = {
     "una_opcion": UnaOpcion,
+    "multiopcion": MultiOpcion,
     "encuesta": Encuesta,
 }

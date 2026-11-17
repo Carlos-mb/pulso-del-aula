@@ -136,11 +136,20 @@ body.alumno .enunciado { font-size: 1.45rem; }
 .opcion.nose { margin-top: 1rem; justify-content: center; color: var(--violet); border: 1px dashed #a7a2ff85; font-family: var(--mono); font-size: 1rem; }
 .opcion.nose:hover { border-color: var(--violet); }
 .opcion.nose.elegida { border: 1px solid var(--violet); background: #a7a2ff26; color: var(--text); }
+.opcion .casilla { font-family: var(--mono); font-size: 1.3em; line-height: 1; flex: none; }
+.opcion.elegida .casilla { color: var(--amber); }
+.enviar {
+  display: block; width: 100%; margin-top: 1rem; padding: .85rem 1rem;
+  font: inherit; font-size: 1.1rem; font-weight: 800; cursor: pointer;
+  background: var(--amber); color: #171004; border: 1px solid var(--amber);
+}
+.enviar:disabled { background: transparent; color: var(--dim); border-color: var(--line); cursor: default; }
 .estado { color: var(--dim); font-family: var(--mono); margin-top: 1rem; }
 .estado.ok { color: var(--green); }
 .resultado { font-size: 1.2rem; font-weight: 800; padding: 1rem; border: 1px solid var(--line); background: var(--bg-soft); }
 .resultado.ok { color: var(--green); border-color: #b8e98680; background: #b8e98614; }
 .resultado.mal { color: var(--coral); border-color: #ff644d80; background: #ff644d14; }
+.resultado.parcial { color: var(--amber); border-color: #f7a41d80; background: #f7a41d14; }
 .resultado.nose { color: var(--violet); border-color: #a7a2ff80; background: #a7a2ff14; }
 
 /* ================= DOCENTE (proyección) ================= */
@@ -239,6 +248,15 @@ body.docente .img-opcion { max-height: 4em; }
 .seg.o2 { background: var(--green); }
 .seg.o3 { background: #e58cc4; }
 .seg.o4 { background: #8fb4ff; }
+.columnas { display: flex; gap: .25em; align-items: flex-end; height: 1.6em; }
+.col { flex: 1; height: 100%; display: flex; align-items: flex-end; background: #ffffff14; }
+.col-relleno { width: 100%; min-height: 1px; }
+.col-relleno.o0 { background: var(--cyan); }
+.col-relleno.o1 { background: var(--amber); }
+.col-relleno.o2 { background: var(--green); }
+.col-relleno.o3 { background: #e58cc4; }
+.col-relleno.o4 { background: #8fb4ff; }
+.col-relleno.nose { background: var(--violet); }
 .sin-datos { color: var(--dim); font-family: var(--mono); font-size: .8em; }
 .fr-nums { display: flex; gap: 1em; font-family: var(--mono); font-weight: 900; font-variant-numeric: tabular-nums; flex: none; }
 .num { min-width: 4.4em; text-align: right; }

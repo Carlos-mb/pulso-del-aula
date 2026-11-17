@@ -87,7 +87,8 @@ function pantallaAbierta(d) {
       p.con_nose && el('li', { class: 'nose' }, el('span', { class: 'letra' }, '?'), ETIQUETA_NOSE),
     ]),
     el('p', { class: 'contador' },
-      `${p.tipo === 'encuesta' ? 'encuesta · ' : ''}votación abierta · ${d.n_respuestas} respuesta${d.n_respuestas === 1 ? '' : 's'}`
+      `${p.tipo === 'encuesta' ? 'encuesta · ' : ''}${p.multiple ? 'marca todas las que correspondan · ' : ''}`
+      + `votación abierta · ${d.n_respuestas} respuesta${d.n_respuestas === 1 ? '' : 's'}`
       + ` · ${d.conectados} conectado${d.conectados === 1 ? '' : 's'}`),
   ];
 }
@@ -120,12 +121,15 @@ function pantallaResultados(d) {
     cabecera(d, `pregunta ${d.indice + 1}/${d.total} · ${MOTIVO_CIERRE[d.motivo_cierre] || 'cerrada'}`),
     enunciado(p, true),
     el('ol', { class: 'resultados' }, [
-      ...p.opciones.map((o, i) => fila(LETRAS[i], o, r.opciones[i], i === r.correcta, false)),
+      ...p.opciones.map((o, i) => fila(LETRAS[i], o, r.opciones[i], r.correctas.includes(i), false)),
       r.nose && fila('?', { texto: ETIQUETA_NOSE }, r.nose, false, true),
     ]),
     p.tipo === 'encuesta'
-      ? el('p', { class: 'contador' }, `encuesta · ${r.total} respuesta${r.total === 1 ? '' : 's'}`)
+      ? el('p', { class: 'contador' }, `encuesta · ${r.total} respuesta${r.total === 1 ? '' : 's'}`
+        + (p.multiple ? ' · se podían marcar varias: los porcentajes no suman 100 %' : ''))
       : el('div', { class: 'resumen' }, r.categorias.map(c => tile(c, r.total))),
+    p.multiple && p.tipo !== 'encuesta'
+      && el('p', { class: 'contador' }, 'cada barra es el porcentaje de alumnos que marcó esa opción'),
     r.explicacion && el('div', { class: 'explicacion md' }, formato(r.explicacion)),
   ];
 }
@@ -143,6 +147,14 @@ function etiquetasReparto(q) {
 
 function barraReparto(q) {
   if (!q.total) return el('div', { class: 'sin-datos' }, 'sin respuestas');
+  if (q.multiple) {   // los porcentajes no suman 100 %: una columna por opción en lugar de una barra apilada
+    return el('div', { class: 'columnas' }, q.reparto.map((o, i) =>
+      el('div', { class: 'col' },
+        el('div', {
+          class: 'col-relleno ' + (q.con_nose && i === q.reparto.length - 1 ? 'nose' : 'o' + (i % 5)),
+          style: `height:${o.pct}%`,
+        }))));
+  }
   return el('div', { class: 'apilada' },
     q.reparto.map((o, i) => o.pct > 0 && el('div', {
       class: 'seg ' + (q.con_nose && i === q.reparto.length - 1 ? 'nose' : 'o' + (i % 5)),

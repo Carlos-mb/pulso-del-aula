@@ -99,7 +99,7 @@ Opciones: `--preguntas CARPETA` (por defecto `./preguntas`), `--puerto N`, `--ho
    al menos un alumno conectado, y como cierra en el último voto, ese alumno ya no puede cambiar su respuesta.
    Un conectado que no vota mantiene abierta la votación hasta que responda, se agote el tiempo o
    pasen 10 s sin que su navegador consulte al servidor (entonces deja de contar).
-5. Tras la última pregunta se muestra el **resumen**: aciertos, errores y «no lo sé» del conjunto
+5. Tras la última pregunta se muestra el **resumen**: aciertos, parciales (solo en `multiopcion`), errores y «no lo sé» del conjunto
    y de cada pregunta. Las encuestas muestran solo su reparto por opción y no cuentan en el conjunto.
 
 **Conectados:** cuenta los navegadores que han consultado al servidor en los últimos 10 segundos
@@ -159,13 +159,53 @@ o para pedir una opinión. **No tiene respuesta correcta**: no lleva `correcta` 
   opciones: ["Nunca", "Lo he visto", "Lo he usado alguna vez", "Lo uso con soltura"]
 ```
 
-- Cada alumno elige **una opción**, y se cierra como las demás (todos han votado, tiempo agotado o el docente).
+- Cada alumno elige **una opción** (o varias, con `multiple: true`; ver abajo), y se cierra como las demás
+  (todos han votado, tiempo agotado o el docente).
 - Los resultados muestran el **reparto por opción** (número y porcentaje). No hay aciertos ni error,
   y el alumno no recibe ninguna solución, solo la confirmación de que su respuesta quedó registrada.
 - «No lo sé / quiero que se explique» **no se añade**. Se activa con `nose: true`.
 - En el resumen final se ve su reparto, pero **no cuentan** en los aciertos, errores y «no lo sé»
   del conjunto. Se pueden mezclar con preguntas de test en un mismo tema.
 - Al arrancar se valida todo y se muestran los errores con fichero, tema y pregunta.
+
+### Varias opciones marcables
+
+El alumno puede marcar **varias opciones** en una misma pregunta, tanto en encuestas como en preguntas con
+respuesta correcta.
+
+```yaml
+# Encuesta: el alumno marca todas las opciones que correspondan.
+- tipo: encuesta
+  multiple: true
+  texto: "Estudios o trabajo previos (marca todos los que correspondan)"
+  opciones: ["Ninguno", "Curso o FP", "Universidad", "He trabajado en el sector"]
+
+# Test: varias opciones correctas (`correcta` es una lista, desde 1).
+- tipo: multiopcion
+  texto: "¿Cuáles de estas direcciones son IPv4 privadas?"
+  opciones: ["10.0.0.5", "8.8.8.8", "192.168.1.20", "172.16.4.9"]
+  correcta: [1, 3, 4]
+```
+
+- **Pantalla del alumno:** casillas en lugar de botones excluyentes y un botón **Enviar**. Hasta enviar
+  se puede cambiar lo marcado, y después de enviar también se puede cambiar y volver a enviar mientras
+  la votación siga abierta. Lo marcado y no enviado no cuenta.
+- **«Han votado todos»** se cuenta cuando cada alumno ha **enviado**, no al marcar.
+- **«No lo sé / quiero que se explique»** es exclusiva: al marcarla se desmarcan las demás y al marcar otra
+  opción se desmarca ella. En una encuesta solo existe con `nose: true`. No se puede enviar sin marcar nada:
+  para contestar «ninguna» se marca «no lo sé» (si está activa) o una opción como «Ninguno».
+- **Encuestas:** el resultado es el **porcentaje de alumnos que marcaron cada opción**. Los porcentajes no
+  suman 100 %, porque cada alumno puede marcar varias. Sin aciertos ni errores, y no cuentan en el conjunto.
+- **`multiopcion`:** la puntuación va de 0 a 1 y es proporcional penalizando las incorrectas:
+  (correctas marcadas − incorrectas marcadas) / total de correctas, con mínimo 0. Categorías:
+  **acierto** (todas las correctas y ninguna incorrecta), **parcial** (puntuación entre 0 y 1),
+  **error** (puntuación 0) y **no lo sé**. «Parcial» se muestra aparte, también en el resumen del conjunto,
+  donde cada pregunta cuenta como una respuesta por alumno. La pantalla del docente marca todas las
+  correctas con ✓ y muestra el porcentaje de marcas de cada opción.
+- **Validación:** al menos 2 opciones; `correcta` en `multiopcion` es una lista no vacía, sin repetidos y
+  dentro del rango (con un número suelto da error). `multiple` no se admite en `una_opcion` ni en `multiopcion`
+  (da un error que remite a `tipo: multiopcion`); en `una_opcion`, `correcta` sigue siendo un solo número.
+- Funciona con el Markdown y las imágenes de las opciones.
 
 ## Anonimato y seguridad
 
@@ -185,7 +225,7 @@ Los colores están como variables CSS al principio de `pulso/static/estilos.css`
 ## Estructura
 
 ```
-pulso/tipos.py      tipos de pregunta (una clase por tipo; hoy: una_opcion y encuesta)
+pulso/tipos.py      tipos de pregunta (una clase por tipo; hoy: una_opcion, multiopcion y encuesta)
 pulso/cargador.py   lectura y validación del YAML (temas, tiempos, imágenes)
 pulso/estado.py     estado de la sesión y fases (inicio → sala → abierta → cerrada → resumen), temporizador y presencia
 pulso/app.py        rutas FastAPI
@@ -196,5 +236,5 @@ tests/              pytest (las pruebas del Markdown están en JavaScript: se ej
 
 ## Estado
 
-Tipos: `una_opcion` y `encuesta`. Pendiente: verdadero/falso, multiopción (puntuación proporcional penalizando
-incorrectas), numérica, modo remoto, empaquetado.
+Tipos: `una_opcion`, `multiopcion` y `encuesta` (esta, con una opción o con varias). Pendiente: verdadero/falso,
+numérica, modo remoto, empaquetado.

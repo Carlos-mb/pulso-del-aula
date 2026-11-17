@@ -225,11 +225,14 @@ class Sesion:
             else:
                 fila["reparto"] = [*r["opciones"], *([r["nose"]] if r["nose"] else [])]
                 fila["con_nose"] = r["nose"] is not None
+                fila["multiple"] = p.con_varias
             filas.append(fila)
         for g in globales.values():
             g["pct"] = round(100 * g["n"] / total, 1) if total else 0.0
+        orden = {k: i for i, k in enumerate(("acierto", "parcial", "error", "nose"))}
+        categorias = sorted(globales.values(), key=lambda g: orden.get(g["clave"], len(orden)))
         return {"preguntas": filas,
-                "global": {"total": total, "categorias": list(globales.values())}}
+                "global": {"total": total, "categorias": categorias}}
 
     def vista(self, token: str | None = None, docente: bool = False) -> dict:
         self._tic()

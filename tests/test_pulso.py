@@ -671,3 +671,186 @@ temas:
         docente.post("/api/docente/siguiente")
         r = docente.get("/api/docente/estado").json()["resumen"]
     assert r["global"] == {"total": 0, "categorias": []}
+
+
+# ---------- varias opciones: multiopción y encuestas con `multiple` ----------
+MULTI = """
+temas:
+  m:
+    titulo: "Multiopción"
+    preguntas:
+      - tipo: multiopcion
+        texto: "¿Cuáles son IPv4 privadas?"
+        opciones: ["10.0.0.5", "8.8.8.8", "192.168.1.20", "172.16.4.9"]
+        correcta: [1, 3, 4]
+      - tipo: encuesta
+        multiple: true
+        texto: "Estudios previos"
+        opciones: ["Ninguno", "FP", "Universidad", "Trabajo"]
+      - texto: "¿Capa de red?"
+        opciones: ["Enlace", "Red"]
+        correcta: 2
+"""
+
+
+@pytest.fixture
+def multi(tmp_path, reloj):
+    d = escribe(tmp_path, MULTI)
+    app = crear_app(cargar(d), d, 8000, reloj=reloj)
+    with TestClient(app, client=("127.0.0.1", 5000)) as docente, \
+         TestClient(app, client=("192.168.1.50", 5000)) as alumno:
+        inicia(docente, "m")
+        yield docente, alumno
+
+
+def test_carga_de_multiopcion_y_encuesta_multiple(tmp_path):
+    t = cargar(escribe(tmp_path, MULTI))["m"]
+    assert [p.tipo for p in t.preguntas] == ["multiopcion", "encuesta", "una_opcion"]
+    assert [p.con_varias for p in t.preguntas] == [True, True, False]
+    assert [p.puntua for p in t.preguntas] == [True, False, True]
+
+
+@pytest.mark.parametrize("fragmento, mensaje", [
+    ("tipo: multiopcion\n        opciones: [a, b]\n        correcta: 1", "debe ser una lista"),
+    ("tipo: multiopcion\n        opciones: [a, b]\n        correcta: []", "al menos una"),
+    ("tipo: multiopcion\n        opciones: [a, b]\n        correcta: [1, 1]", "repetidos"),
+    ("tipo: multiopcion\n        opciones: [a, b]\n        correcta: [1, 3]", "entre 1 y 2"),
+    ("tipo: multiopcion\n        opciones: [a, b]\n        correcta: [0]", "entre 1 y 2"),
+    ("tipo: multiopcion\n        opciones: [a]\n        correcta: [1]", "al menos 2"),
+    ("tipo: multiopcion\n        opciones: [a, b]", "correcta"),
+    ("tipo: multiopcion\n        multiple: true\n        opciones: [a, b]\n        correcta: [1]", "sobra"),
+    ("opciones: [a, b]\n        correcta: [1, 2]", "tipo: multiopcion"),
+    ("opciones: [a, b]\n        correcta: 1\n        multiple: true", "tipo: multiopcion"),
+    ("tipo: encuesta\n        opciones: [a, b]\n        multiple: quizá", "multiple"),
+    ("tipo: encuesta\n        opciones: [a, b]\n        multiple: true\n        correcta: [1]", "no tiene respuesta correcta"),
+])
+def test_errores_de_varias_opciones(tmp_path, fragmento, mensaje):
+    d = escribe(tmp_path, f"""
+temas:
+  t:
+    preguntas:
+      - texto: "?"
+        {fragmento}
+""")
+    with pytest.raises(ErrorBanco, match=mensaje):
+        cargar(d)
+
+
+def test_puntuacion_proporcional_penalizando_incorrectas(tmp_path):
+    p = cargar(escribe(tmp_path, MULTI))["m"].preguntas[0]   # correctas: índices 0, 2, 3
+    assert p.evaluar([0, 2, 3]) == ("acierto", 1.0)
+    assert p.evaluar([0, 2]) == ("parcial", pytest.approx(2 / 3))
+    assert p.evaluar([0, 1, 2, 3]) == ("parcial", pytest.approx(2 / 3))      # 3 aciertos - 1 fallo
+    assert p.evaluar([0, 1]) == ("error", 0.0)                               # 1 - 1 = 0
+    assert p.evaluar([1]) == ("error", 0.0)                                  # nunca baja de 0
+    assert p.evaluar([1, 0]) == ("error", 0.0)
+    assert p.evaluar("nose") == ("nose", 0.0)
+
+
+def test_resultados_de_multiopcion(tmp_path):
+    p = cargar(escribe(tmp_path, MULTI))["m"].preguntas[0]
+    r = p.resultados([[0, 2, 3], [0, 2], [1], "nose"])
+    assert {c["clave"]: c["n"] for c in r["categorias"]} == {"acierto": 1, "parcial": 1, "error": 1, "nose": 1}
+    assert [c["etiqueta"] for c in r["categorias"]] == ["Aciertos", "Parcial", "Error", "No lo sé"]
+    assert [o["n"] for o in r["opciones"]] == [2, 1, 2, 1]
+    assert [o["pct"] for o in r["opciones"]] == [50.0, 25.0, 50.0, 25.0]   # sobre 4 alumnos: suman más de 100
+    assert r["nose"]["n"] == 1 and r["total"] == 4
+    assert r["correctas"] == [0, 2, 3]
+
+
+def test_validacion_de_respuestas_con_varias_opciones(multi):
+    docente, alumno = multi
+    conecta(alumno, TOKEN_A, TOKEN_B)          # B no vota: la pregunta sigue abierta
+    pub = estado(alumno)["pregunta"]
+    assert pub["multiple"] is True and pub["con_nose"] is True and "correcta" not in pub
+    for mala in (1, [], [4], [-1], [1, 1], [True], ["a"], "otra", [0, "nose"], [0, 1, 2, 3, 0]):
+        assert responde(alumno, TOKEN_A, mala).status_code in (400, 422), mala
+    assert "mi_respuesta" not in estado(alumno, token=TOKEN_A)
+    assert responde(alumno, TOKEN_A, [3, 0]).status_code == 200
+    assert estado(alumno, token=TOKEN_A)["mi_respuesta"] == [0, 3]          # se guarda ordenada
+    assert responde(alumno, TOKEN_A, "nose").status_code == 200              # «no lo sé» sustituye a las marcas
+    assert estado(alumno, token=TOKEN_A)["mi_respuesta"] == "nose"
+    assert responde(alumno, TOKEN_A, [1]).status_code == 200                 # y se puede volver a cambiar
+
+
+def test_una_opcion_no_admite_listas(multi):
+    docente, alumno = multi
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+    assert estado(alumno)["pregunta"]["multiple"] is False
+    assert responde(alumno, TOKEN_A, [1]).status_code == 400
+    assert responde(alumno, TOKEN_A, 1).status_code == 200
+
+
+def test_multiopcion_cerrada_da_categoria_y_marca_todas_las_correctas(multi):
+    docente, alumno = multi
+    responde(alumno, TOKEN_A, [0, 2, 3])
+    responde(alumno, TOKEN_B, [0, 2])
+    responde(alumno, TOKEN_C, [1])
+    docente.post("/api/docente/cerrar")
+    assert estado(alumno, token=TOKEN_A)["mi_categoria"] == "acierto"
+    assert estado(alumno, token=TOKEN_B)["mi_categoria"] == "parcial"
+    assert estado(alumno, token=TOKEN_C)["mi_categoria"] == "error"
+    r = docente.get("/api/docente/estado").json()["resultados"]
+    assert r["correctas"] == [0, 2, 3]
+    assert [o["n"] for o in r["opciones"]] == [2, 1, 2, 1]
+
+
+def test_multiopcion_se_cierra_cuando_todos_han_enviado(multi):
+    docente, alumno = multi
+    estado(alumno, token=TOKEN_A)
+    estado(alumno, token=TOKEN_B)
+    assert docente.get("/api/docente/estado").json()["fase"] == "abierta"
+    responde(alumno, TOKEN_A, [0])
+    assert docente.get("/api/docente/estado").json()["fase"] == "abierta"    # falta uno por enviar
+    responde(alumno, TOKEN_B, [1])
+    e = docente.get("/api/docente/estado").json()
+    assert e["fase"] == "cerrada" and e["motivo_cierre"] == "todos"
+
+
+def test_encuesta_multiple_porcentaje_de_alumnos_que_marcan_cada_opcion(multi):
+    docente, alumno = multi
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+    assert estado(alumno)["pregunta"]["multiple"] is True
+    assert responde(alumno, TOKEN_A, [1, 2]).status_code == 200
+    assert responde(alumno, TOKEN_B, [2]).status_code == 200
+    assert responde(alumno, TOKEN_C, [0, 1, 2, 3]).status_code == 200
+    assert responde(alumno, "d" * 16, [2, 3]).status_code == 200
+    docente.post("/api/docente/cerrar")
+    e = docente.get("/api/docente/estado").json()
+    r = e["resultados"]
+    assert r["total"] == 4 and r["categorias"] == [] and r["correctas"] == []
+    assert [o["pct"] for o in r["opciones"]] == [25.0, 50.0, 100.0, 50.0]    # no suman 100 %
+    assert "mi_categoria" not in estado(alumno, token=TOKEN_A)
+
+
+def test_resumen_con_parcial_y_encuesta_multiple(multi):
+    docente, alumno = multi
+    responde(alumno, TOKEN_A, [0, 2, 3])                 # acierto
+    responde(alumno, TOKEN_B, [0, 2])                    # parcial
+    responde(alumno, TOKEN_C, [1])                       # error
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+    responde(alumno, TOKEN_A, [0, 1])                    # encuesta múltiple
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+    responde(alumno, TOKEN_A, 1)                         # una_opcion: acierto
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+    r = estado(alumno)["resumen"]
+    assert [c["clave"] for c in r["global"]["categorias"]] == ["acierto", "parcial", "error", "nose"]
+    g = {c["clave"]: c["n"] for c in r["global"]["categorias"]}
+    assert g == {"acierto": 2, "parcial": 1, "error": 1, "nose": 0} and r["global"]["total"] == 4
+    multi_q, enc, _ = r["preguntas"]
+    assert [c["clave"] for c in multi_q["categorias"]] == ["acierto", "parcial", "error", "nose"]
+    assert enc["multiple"] is True and [o["n"] for o in enc["reparto"]] == [1, 1, 0, 0]
+
+
+def test_el_ejemplo_incluye_varias_opciones():
+    temas = cargar(PREGUNTAS)
+    assert [p.tipo for p in temas["multiopcion"].preguntas] == ["multiopcion", "multiopcion"]
+    assert any(p.tipo == "encuesta" and p.con_varias for p in temas["experiencia"].preguntas)
+

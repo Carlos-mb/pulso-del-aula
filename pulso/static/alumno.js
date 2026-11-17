@@ -162,7 +162,7 @@ const MENSAJE_CATEGORIA = {
   acierto: ['ok', '✓ Tu respuesta era correcta.'],
   error: ['mal', '✗ Tu respuesta no era la correcta. Mira la pantalla.'],
   parcial: ['parcial', '≈ Tu respuesta era parcialmente correcta. Mira la pantalla.'],
-  nose: ['nose', '? Pediste que se explique. ¡Atento a la explicación!'],
+  nose: ['nose', ETIQUETA_NOSE],
 };
 
 function mensajeCerrada(d) {

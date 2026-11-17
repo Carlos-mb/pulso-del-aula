@@ -1,0 +1,55 @@
+# Preguntas de ejemplo.
+#
+# - Cada fichero .yaml de esta carpeta puede definir uno o varios temas.
+# - 'correcta' cuenta desde 1: la primera opción es la 1.
+# - 'tiempo' son los segundos para responder. Se puede poner:
+#     · en el tema      -> es el valor por defecto de todas sus preguntas
+#     · en una pregunta -> sustituye al del tema (0 = esa pregunta sin límite)
+#   Si no aparece en ninguno de los dos, no hay límite de tiempo.
+# - La votación se abre sola al presentar la pregunta y, si tiene tiempo,
+#   se cierra sola al agotarse.
+# - Las imágenes van en la carpeta media/ (ruta relativa a ella).
+# - La opción "No lo sé / quiero que se explique" se añade sola: no la escribas.
+# - Si una opción puede confundirse con un valor YAML (Sí, No, On, Off...),
+#   entrecomíllala.
+
+temas:
+  redes:
+    titulo: "Redes básicas"
+    tiempo: 30                      # por defecto, 30 s por pregunta
+    preguntas:
+      - texto: "¿Qué capa del modelo OSI se encarga del enrutamiento?"
+        opciones:
+          - "Enlace de datos"
+          - "Red"
+          - "Transporte"
+          - "Aplicación"
+        correcta: 2
+        explicacion: "La capa de red (3) decide por dónde viajan los paquetes mediante direcciones IP."
+
+      - texto: "¿Cuál de estas direcciones es una IPv4 privada?"
+        tiempo: 45                  # esta pregunta da más tiempo
+        opciones:
+          - "8.8.8.8"
+          - "172.16.4.20"
+          - "200.10.5.1"
+        correcta: 2
+        explicacion: "El rango 172.16.0.0–172.31.255.255 está reservado para redes privadas."
+
+  imagenes:
+    titulo: "Preguntas con imágenes (prueba)"   # sin 'tiempo': sin límite
+    preguntas:
+      - texto: "¿Qué figura se muestra?"
+        imagen: "figuras.svg"
+        opciones:
+          - "Un círculo"
+          - "Un cuadrado"
+          - "Un triángulo"
+        correcta: 2
+
+      - texto: "¿Cuál de estas figuras es un círculo?"
+        tiempo: 15                  # solo esta pregunta tiene límite
+        opciones:
+          - { imagen: "cuadrado.svg", texto: "Figura 1" }
+          - { imagen: "circulo.svg", texto: "Figura 2" }
+        correcta: 2

@@ -1138,7 +1138,7 @@ IDENT = """
 temas:
   r:
     titulo: "Con ranking"
-    identificacion: true
+    modo_competicion: true
     preguntas:
       - texto: "¿Capa de red?"
         opciones: ["Enlace", "Red"]
@@ -1187,8 +1187,8 @@ def test_la_identificacion_es_una_opcion_del_tema(tmp_path):
     temas = cargar(PREGUNTAS)
     assert temas["redes"].identificacion and temas["multiopcion"].identificacion
     assert not temas["imagenes"].identificacion
-    d = escribe(tmp_path, IDENT.replace("identificacion: true", "identificacion: 1"))
-    with pytest.raises(ErrorBanco, match="identificacion"):
+    d = escribe(tmp_path, IDENT.replace("modo_competicion: true", "modo_competicion: 1"))
+    with pytest.raises(ErrorBanco, match="modo_competicion"):
         cargar(d)
 
 

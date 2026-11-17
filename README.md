@@ -112,13 +112,13 @@ Opciones: `--preguntas CARPETA` (por defecto `./preguntas`), `--puerto N`, `--ho
 
 ### Identificación y ranking (opcional)
 
-Un tema con `identificacion: true` deja de ser anónimo: cada alumno elige un **alias** al entrar y hay **ranking**.
+Un tema con `modo_competicion: true` deja de ser anónimo: cada alumno elige un **alias** al entrar y hay **ranking**.
 
 ```yaml
 temas:
   redes:
     titulo: "Redes básicas"
-    identificacion: true
+    modo_competicion: true
 ```
 
 - **Alias:** hasta 20 caracteres, **sin repetidos** (no distingue mayúsculas ni espacios de más). No se puede
@@ -253,7 +253,7 @@ antes de tener el dominio, un túnel temporal da una dirección `https://….try
 Cada `.yaml` de la carpeta `preguntas/` define uno o varios temas. Ver `preguntas/ejemplo.yaml`.
 
 - **`correcta` cuenta desde 1** (la primera opción es la 1).
-- **`identificacion`** (`true`/`false`, en el tema): alias de los alumnos y ranking; ver [Identificación y ranking](#identificación-y-ranking-opcional).
+- **`modo_competicion`** (`true`/`false`, en el tema): alias de los alumnos y ranking; ver [Identificación y ranking](#identificación-y-ranking-opcional).
 - **`tiempo`** (segundos para responder): en el tema es el valor por defecto de sus preguntas; en una
   pregunta lo sustituye (`tiempo: 0` = esa pregunta sin límite). Si no aparece en ninguno, sin límite.
 - Las imágenes van en `preguntas/media/` y se referencian por ruta relativa, tanto en el enunciado

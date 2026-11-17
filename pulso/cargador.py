@@ -104,10 +104,10 @@ def cargar(directorio: Path) -> dict[str, Tema]:
                     f"{fichero.name}, tema '{tid}': 'tiempo' debe ser un número entero "
                     "de segundos (0 = sin límite)"
                 )
-            identificacion = cuerpo.get("identificacion", False)
+            identificacion = cuerpo.get("modo_competicion", False)
             if not isinstance(identificacion, bool):
                 raise ErrorBanco(
-                    f"{fichero.name}, tema '{tid}': 'identificacion' debe ser true o false"
+                    f"{fichero.name}, tema '{tid}': 'modo_competicion' debe ser true o false"
                 )
             tema = Tema(id=tid, titulo=str(cuerpo.get("titulo", tid)), tiempo=tiempo,
                         identificacion=identificacion)

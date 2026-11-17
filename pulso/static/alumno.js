@@ -41,7 +41,7 @@ function cabecera(d) {
 
 function enunciado(p) {
   return [
-    el('h1', { class: 'enunciado' }, p.texto),
+    tituloEnunciado(p.texto),
     p.imagen && el('img', { class: 'img-pregunta', src: p.imagen, alt: '' }),
   ];
 }
@@ -57,13 +57,13 @@ function vistaAbierta(d) {
         class: 'opcion' + (mia === i ? ' elegida' : ''),
         onclick: () => enviar(i),
       }, el('span', { class: 'letra' }, LETRAS[i]), contenidoOpcion(o)))),
-    el('button', {
+    p.con_nose && el('button', {
       class: 'opcion nose' + (mia === NOSE ? ' elegida' : ''),
       onclick: () => enviar(NOSE),
     }, ETIQUETA_NOSE),
     mia !== undefined
       ? el('p', { class: 'estado ok' }, '✓ respuesta enviada · puedes cambiarla hasta que se cierre la votación')
-      : el('p', { class: 'estado' }, 'elige una opción'),
+      : el('p', { class: 'estado' }, p.tipo === 'encuesta' ? 'encuesta · no hay respuesta correcta' : 'elige una opción'),
   ];
 }
 
@@ -73,14 +73,23 @@ const MENSAJE_CATEGORIA = {
   nose: ['nose', '? Pediste que se explique. ¡Atento a la explicación!'],
 };
 
-function vistaCerrada(d) {
+function mensajeCerrada(d) {
+  if (d.pregunta.tipo === 'encuesta') {   // sin respuesta correcta: no hay acierto ni error
+    return d.mi_respuesta === undefined
+      ? el('p', { class: 'resultado' }, 'No respondiste a esta pregunta.')
+      : el('p', { class: 'resultado ok' }, '✓ Tu respuesta quedó registrada.');
+  }
   const m = MENSAJE_CATEGORIA[d.mi_categoria];
+  return m
+    ? el('p', { class: 'resultado ' + m[0] }, m[1])
+    : el('p', { class: 'resultado' }, 'No respondiste a esta pregunta.');
+}
+
+function vistaCerrada(d) {
   return [
     cabecera(d),
-    el('h1', { class: 'enunciado' }, d.pregunta.texto),
-    m
-      ? el('p', { class: 'resultado ' + m[0] }, m[1])
-      : el('p', { class: 'resultado' }, 'No respondiste a esta pregunta.'),
+    tituloEnunciado(d.pregunta.texto),
+    mensajeCerrada(d),
     el('p', { class: 'espera' }, 'votación cerrada · mira los resultados en la pantalla'),
   ];
 }

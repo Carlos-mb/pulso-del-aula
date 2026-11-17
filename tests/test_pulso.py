@@ -520,3 +520,154 @@ def test_el_docente_ve_conectados_durante_la_votacion(cliente):
     conecta(alumno, TOKEN_A, TOKEN_B)
     e = docente.get("/api/docente/estado").json()
     assert e["fase"] == "abierta" and e["conectados"] == 2
+
+
+# ---------- encuestas (preguntas sin respuesta correcta) ----------
+MIXTO = """
+temas:
+  mixto:
+    titulo: "Encuesta y test"
+    preguntas:
+      - tipo: encuesta
+        texto: "La terminal de Linux"
+        opciones: ["Nunca", "Lo he visto", "Lo he usado alguna vez", "Lo uso con soltura"]
+      - texto: "¿Capa de red?"
+        opciones: ["Enlace", "Red"]
+        correcta: 2
+      - tipo: encuesta
+        texto: "¿Quieres más práctica?"
+        nose: true
+        opciones: ["Sí", "No"]
+"""
+
+
+@pytest.fixture
+def mixto(tmp_path, reloj):
+    d = escribe(tmp_path, MIXTO)
+    app = crear_app(cargar(d), d, 8000, reloj=reloj)
+    with TestClient(app, client=("127.0.0.1", 5000)) as docente, \
+         TestClient(app, client=("192.168.1.50", 5000)) as alumno:
+        inicia(docente, "mixto")
+        yield docente, alumno
+
+
+def test_carga_de_encuesta(tmp_path):
+    t = cargar(escribe(tmp_path, MIXTO))["mixto"]
+    assert [p.tipo for p in t.preguntas] == ["encuesta", "una_opcion", "encuesta"]
+    assert [p.con_nose for p in t.preguntas] == [False, True, True]
+    assert [p.puntua for p in t.preguntas] == [False, True, False]
+
+
+@pytest.mark.parametrize("fragmento, mensaje", [
+    ("opciones: [a, b]\n        correcta: 1", "no tiene respuesta correcta"),
+    ("opciones: [a]", "al menos 2"),
+    ("opciones: [a, b]\n        nose: quizá", "nose"),
+    ("opciones: [a, b]\n        nosee: true", "nosee"),
+])
+def test_errores_de_encuesta(tmp_path, fragmento, mensaje):
+    d = escribe(tmp_path, f"""
+temas:
+  t:
+    preguntas:
+      - tipo: encuesta
+        texto: "?"
+        {fragmento}
+""")
+    with pytest.raises(ErrorBanco, match=mensaje):
+        cargar(d)
+
+
+def test_resultados_de_encuesta_son_solo_el_reparto(tmp_path):
+    p = cargar(escribe(tmp_path, MIXTO))["mixto"].preguntas[0]
+    r = p.resultados([0, 0, 1, 3])
+    assert [o["n"] for o in r["opciones"]] == [2, 1, 0, 1]
+    assert [o["pct"] for o in r["opciones"]] == [50.0, 25.0, 0.0, 25.0]
+    assert r["total"] == 4
+    assert r["categorias"] == [] and r["correcta"] is None and r["nose"] is None
+    assert p.resultados([])["opciones"][0]["pct"] == 0.0
+
+
+def test_la_encuesta_no_ofrece_nose_por_defecto(mixto):
+    docente, alumno = mixto
+    assert estado(alumno)["pregunta"]["con_nose"] is False
+    assert responde(alumno, TOKEN_A, "nose").status_code == 400      # no se admite
+    assert responde(alumno, TOKEN_A, 9).status_code == 400
+    assert "mi_respuesta" not in estado(alumno, token=TOKEN_A)
+    assert responde(alumno, TOKEN_A, 2).status_code == 200
+
+
+def test_la_encuesta_con_nose_activado_lo_admite(mixto):
+    docente, alumno = mixto
+    for _ in range(2):
+        docente.post("/api/docente/cerrar")
+        docente.post("/api/docente/siguiente")
+    assert estado(alumno)["pregunta"]["con_nose"] is True
+    assert responde(alumno, TOKEN_A, "nose").status_code == 200
+    assert responde(alumno, TOKEN_B, 0).status_code == 200
+    docente.post("/api/docente/cerrar")
+    r = docente.get("/api/docente/estado").json()["resultados"]
+    assert r["nose"]["n"] == 1 and r["opciones"][0]["n"] == 1 and r["total"] == 2
+
+
+def test_encuesta_cerrada_no_da_solucion_ni_categoria(mixto):
+    docente, alumno = mixto
+    assert "correcta" not in estado(alumno)["pregunta"]
+    responde(alumno, TOKEN_A, 1)
+    docente.post("/api/docente/cerrar")
+    e = estado(alumno, token=TOKEN_A)
+    assert e["fase"] == "cerrada" and e["mi_respuesta"] == 1
+    assert "mi_categoria" not in e                                    # ni acierto ni error
+    r = docente.get("/api/docente/estado").json()["resultados"]
+    assert r["categorias"] == [] and r["correcta"] is None
+    assert [o["n"] for o in r["opciones"]] == [0, 1, 0, 0]
+
+
+def test_la_encuesta_se_cierra_como_las_demas(mixto):
+    docente, alumno = mixto
+    estado(alumno, token=TOKEN_A)                    # conectado
+    responde(alumno, TOKEN_A, 0)                     # vota el único conectado
+    e = docente.get("/api/docente/estado").json()
+    assert e["fase"] == "cerrada" and e["motivo_cierre"] == "todos"
+
+
+def test_las_encuestas_no_cuentan_en_el_resumen_global(mixto):
+    docente, alumno = mixto
+    responde(alumno, TOKEN_A, 3)                     # encuesta 1
+    responde(alumno, TOKEN_B, 3)
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+    responde(alumno, TOKEN_A, 1)                     # test: acierto
+    responde(alumno, TOKEN_B, 0)                     # test: error
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+    responde(alumno, TOKEN_A, "nose")                # encuesta 2 con «no lo sé»
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+
+    r = estado(alumno)["resumen"]
+    assert r["global"]["total"] == 2                 # solo las dos respuestas del test
+    g = {c["clave"]: (c["n"], c["pct"]) for c in r["global"]["categorias"]}
+    assert g == {"acierto": (1, 50.0), "error": (1, 50.0), "nose": (0, 0.0)}
+
+    e1, test, e2 = r["preguntas"]
+    assert [e1["tipo"], test["tipo"], e2["tipo"]] == ["encuesta", "una_opcion", "encuesta"]
+    assert e1["categorias"] == [] and e1["total"] == 2
+    assert [o["n"] for o in e1["reparto"]] == [0, 0, 0, 2] and e1["con_nose"] is False
+    assert "reparto" not in test
+    assert [o["n"] for o in e2["reparto"]] == [0, 0, 1] and e2["con_nose"] is True   # sí, no, «no lo sé»
+
+
+def test_resumen_con_solo_encuestas(tmp_path, reloj):
+    d = escribe(tmp_path, """
+temas:
+  e:
+    preguntas:
+      - {tipo: encuesta, texto: "?", opciones: [a, b]}
+""")
+    app = crear_app(cargar(d), d, 8000, reloj=reloj)
+    with TestClient(app, client=("127.0.0.1", 5000)) as docente:
+        inicia(docente, "e")
+        docente.post("/api/docente/cerrar")
+        docente.post("/api/docente/siguiente")
+        r = docente.get("/api/docente/estado").json()["resumen"]
+    assert r["global"] == {"total": 0, "categorias": []}

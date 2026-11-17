@@ -92,6 +92,11 @@ function sondear(url, render, ms = 1000) {
 function contenidoOpcion(o) {
   return [
     o.imagen && el('img', { class: 'img-opcion', src: o.imagen, alt: '' }),
-    o.texto && el('span', { class: 'texto-opcion' }, o.texto),
+    o.texto && el('div', { class: 'texto-opcion md' }, formato(o.texto, { enlaces: false })),
   ];
+}
+
+// Contenedor del enunciado (formato() puede devolver párrafos, listas…, no vale un <h1>).
+function tituloEnunciado(texto, clases) {
+  return el('div', { class: 'enunciado md ' + (clases || ''), role: 'heading', 'aria-level': '1' }, formato(texto));
 }

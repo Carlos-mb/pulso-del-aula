@@ -204,19 +204,28 @@ class Sesion:
 
     # ---------- lo que se envía a los clientes ----------
     def resumen(self) -> dict:
-        """Aciertos/errores/no lo sé de cada pregunta y del conjunto."""
+        """Aciertos/errores/no lo sé de cada pregunta y del conjunto.
+
+        Las encuestas (sin respuesta correcta) aparecen con su reparto por opción y
+        no cuentan en el conjunto.
+        """
         assert self.tema is not None
         filas = []
         globales: dict[str, dict] = {}
         total = 0
         for i, p in enumerate(self.tema.preguntas):
             r = p.resultados(list(self.respuestas.get(p.id, {}).values()))
-            total += r["total"]
-            for c in r["categorias"]:
-                g = globales.setdefault(c["clave"], {"clave": c["clave"], "etiqueta": c["etiqueta"], "n": 0})
-                g["n"] += c["n"]
-            filas.append({"indice": i, "texto": p.texto, "total": r["total"],
-                          "categorias": r["categorias"]})
+            fila = {"indice": i, "texto": p.texto, "tipo": p.tipo, "total": r["total"],
+                    "categorias": r["categorias"]}
+            if p.puntua:
+                total += r["total"]
+                for c in r["categorias"]:
+                    g = globales.setdefault(c["clave"], {"clave": c["clave"], "etiqueta": c["etiqueta"], "n": 0})
+                    g["n"] += c["n"]
+            else:
+                fila["reparto"] = [*r["opciones"], *([r["nose"]] if r["nose"] else [])]
+                fila["con_nose"] = r["nose"] is not None
+            filas.append(fila)
         for g in globales.values():
             g["pct"] = round(100 * g["n"] / total, 1) if total else 0.0
         return {"preguntas": filas,
@@ -246,7 +255,7 @@ class Sesion:
                     v["motivo_cierre"] = self.cerradas.get(p.id, "docente")
                 if token is not None and token in resp:
                     v["mi_respuesta"] = resp[token]
-                    if self.fase == "cerrada":
+                    if self.fase == "cerrada" and p.puntua:
                         v["mi_categoria"] = p.evaluar(resp[token])[0]
         if docente:
             v["temas"] = [

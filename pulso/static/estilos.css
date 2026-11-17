@@ -76,11 +76,46 @@ img { max-width: 100%; }
 
 .enunciado {
   font-family: var(--mono); font-weight: 900; line-height: 1.15;
-  text-shadow: 0 12px 42px #00000085; white-space: pre-wrap; margin: .5em 0 .8em;
+  text-shadow: 0 12px 42px #00000085; margin: .5em 0 .8em;
 }
 .img-pregunta { max-height: 32vh; display: block; margin: 0 0 1em; border: 1px solid var(--line); }
 .img-opcion { max-height: 6em; vertical-align: middle; }
-.texto-opcion { white-space: pre-wrap; }
+.opcion .texto-opcion { text-align: left; min-width: 0; }
+
+/* Markdown de enunciados, opciones y explicaciones (ver markdown.js) */
+.md p { margin: .5em 0; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md ul, .md ol { margin: .4em 0; padding-left: 1.5em; }
+.md li > p { margin: 0; }
+.md li > ul, .md li > ol { margin: .15em 0; }
+.md .md-t { margin: .6em 0 .3em; line-height: 1.2; font-size: 1.05em; }
+.md h2.md-t { font-size: 1.2em; }
+.md strong { font-weight: 900; }
+.md em { font-style: italic; }
+.md del { text-decoration: line-through; opacity: .75; }
+.md a { color: var(--amber-soft); text-decoration: underline; text-underline-offset: .15em; }
+.md code {
+  font-family: var(--mono); font-weight: 700; font-size: .92em;
+  padding: .05em .35em; background: #65d8e81f; border: 1px solid #65d8e855; color: var(--cyan);
+  overflow-wrap: anywhere;
+}
+.md pre {
+  margin: .5em 0; padding: .6em .9em; background: var(--bg); border: 1px solid var(--line);
+  font-family: var(--mono); font-size: .9em; font-weight: 600; line-height: 1.35;
+  white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; text-shadow: none;
+}
+.md pre code { padding: 0; background: none; border: 0; font-size: 1em; font-weight: inherit; color: var(--text); }
+.md blockquote { margin: .5em 0; padding: .1em 0 .1em .9em; border-left: 3px solid var(--line-bright); color: var(--muted); }
+.md hr { border: 0; border-top: 1px solid var(--line-bright); margin: .7em 0; }
+.md table { border-collapse: collapse; margin: .5em 0; font-size: .95em; }
+.md th, .md td { border: 1px solid var(--line); padding: .25em .7em; text-align: left; }
+.md th { background: var(--bg-soft); font-weight: 900; }
+/* en el resumen cada pregunta ocupa una sola línea: todo el Markdown se aplana */
+.fr-texto.md :is(p, ul, ol, li, blockquote, pre, h2, h3, h4, h5, h6, table, thead, tbody, tr, th, td, hr) {
+  display: inline; margin: 0; padding: 0; border: 0; background: none; white-space: inherit;
+}
+.fr-texto.md td::after, .fr-texto.md th::after { content: " "; }
 
 /* ================= ALUMNO ================= */
 body.alumno main { max-width: 46rem; margin: 0 auto; padding: 1.1rem 1rem 3rem; }
@@ -147,13 +182,13 @@ body.docente .img-opcion { max-height: 4em; }
 .sala-pista { text-align: center; color: var(--dim); font-family: var(--mono); margin-top: 1.2em; }
 
 .lista-opciones { list-style: none; padding: 0; margin: 0; display: grid; gap: .5em; }
-.lista-opciones li {
+.lista-opciones > li {
   display: flex; align-items: center; gap: .8em;
   background: var(--bg-soft); border: 1px solid var(--line);
   padding: .55em 1em; font-size: 1.2em; font-weight: 600;
 }
-.lista-opciones li.nose { border-style: dashed; border-color: #a7a2ff85; color: var(--violet); font-family: var(--mono); font-size: 1em; }
-.lista-opciones li.nose .letra { color: var(--violet); }
+.lista-opciones > li.nose { border-style: dashed; border-color: #a7a2ff85; color: var(--violet); font-family: var(--mono); font-size: 1em; }
+.lista-opciones > li.nose .letra { color: var(--violet); }
 .contador { margin: 1.2em 0 0; text-align: center; color: var(--amber); font-family: var(--mono); font-weight: 800; font-size: 1.3em; }
 
 .resultados { list-style: none; padding: 0; margin: 0; display: grid; gap: .45em; }
@@ -186,7 +221,7 @@ body.docente .img-opcion { max-height: 4em; }
 .tile.parcial .tile-pct { color: var(--amber); }
 .explicacion {
   margin: 1em 0 0; padding: .7em 1em; background: var(--bg-soft);
-  border-left: 2px solid var(--amber); white-space: pre-wrap; color: var(--muted);
+  border-left: 2px solid var(--amber); color: var(--muted);
 }
 
 /* resumen final del test */
@@ -199,10 +234,20 @@ body.docente .img-opcion { max-height: 4em; }
 .seg.error { background: var(--coral); }
 .seg.nose { background: var(--violet); }
 .seg.parcial { background: var(--amber); }
+.seg.o0 { background: var(--cyan); }
+.seg.o1 { background: var(--amber); }
+.seg.o2 { background: var(--green); }
+.seg.o3 { background: #e58cc4; }
+.seg.o4 { background: #8fb4ff; }
 .sin-datos { color: var(--dim); font-family: var(--mono); font-size: .8em; }
 .fr-nums { display: flex; gap: 1em; font-family: var(--mono); font-weight: 900; font-variant-numeric: tabular-nums; flex: none; }
 .num { min-width: 4.4em; text-align: right; }
 .num.acierto { color: var(--green); }
+.num.o0 { color: var(--cyan); }
+.num.o1 { color: var(--amber); }
+.num.o2 { color: var(--green); }
+.num.o3 { color: #e58cc4; }
+.num.o4 { color: #8fb4ff; }
 .num.error { color: var(--coral); }
 .num.nose { color: var(--violet); }
 .num.parcial { color: var(--amber); }

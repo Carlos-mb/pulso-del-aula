@@ -71,7 +71,7 @@ function cabecera(d, derecha) {
 
 function enunciado(p, compacto) {
   return [
-    el('h1', { class: 'enunciado' + (compacto ? ' compacto' : '') }, p.texto),
+    tituloEnunciado(p.texto, compacto ? 'compacto' : ''),
     p.imagen && el('img', { class: 'img-pregunta', src: p.imagen, alt: '' }),
   ];
 }
@@ -84,10 +84,10 @@ function pantallaAbierta(d) {
     el('ol', { class: 'lista-opciones' }, [
       ...p.opciones.map((o, i) =>
         el('li', {}, el('span', { class: 'letra' }, LETRAS[i]), contenidoOpcion(o))),
-      el('li', { class: 'nose' }, el('span', { class: 'letra' }, '?'), ETIQUETA_NOSE),
+      p.con_nose && el('li', { class: 'nose' }, el('span', { class: 'letra' }, '?'), ETIQUETA_NOSE),
     ]),
     el('p', { class: 'contador' },
-      `votación abierta · ${d.n_respuestas} respuesta${d.n_respuestas === 1 ? '' : 's'}`
+      `${p.tipo === 'encuesta' ? 'encuesta · ' : ''}votación abierta · ${d.n_respuestas} respuesta${d.n_respuestas === 1 ? '' : 's'}`
       + ` · ${d.conectados} conectado${d.conectados === 1 ? '' : 's'}`),
   ];
 }
@@ -121,10 +121,12 @@ function pantallaResultados(d) {
     enunciado(p, true),
     el('ol', { class: 'resultados' }, [
       ...p.opciones.map((o, i) => fila(LETRAS[i], o, r.opciones[i], i === r.correcta, false)),
-      fila('?', { texto: ETIQUETA_NOSE }, r.nose, false, true),
+      r.nose && fila('?', { texto: ETIQUETA_NOSE }, r.nose, false, true),
     ]),
-    el('div', { class: 'resumen' }, r.categorias.map(c => tile(c, r.total))),
-    r.explicacion && el('p', { class: 'explicacion' }, r.explicacion),
+    p.tipo === 'encuesta'
+      ? el('p', { class: 'contador' }, `encuesta · ${r.total} respuesta${r.total === 1 ? '' : 's'}`)
+      : el('div', { class: 'resumen' }, r.categorias.map(c => tile(c, r.total))),
+    r.explicacion && el('div', { class: 'explicacion md' }, formato(r.explicacion)),
   ];
 }
 
@@ -134,14 +136,33 @@ function barraApilada(q) {
     q.categorias.map(c => c.pct > 0 && el('div', { class: 'seg ' + c.clave, style: `width:${c.pct}%` })));
 }
 
+// Una encuesta no tiene aciertos ni errores: su barra reparte los votos por opción.
+function etiquetasReparto(q) {
+  return q.reparto.map((_, i) => (q.con_nose && i === q.reparto.length - 1 ? '?' : LETRAS[i]));
+}
+
+function barraReparto(q) {
+  if (!q.total) return el('div', { class: 'sin-datos' }, 'sin respuestas');
+  return el('div', { class: 'apilada' },
+    q.reparto.map((o, i) => o.pct > 0 && el('div', {
+      class: 'seg ' + (q.con_nose && i === q.reparto.length - 1 ? 'nose' : 'o' + (i % 5)),
+      style: `width:${o.pct}%`,
+    })));
+}
+
 function filaResumen(q) {
+  const encuesta = q.tipo === 'encuesta';
+  const nums = encuesta
+    ? etiquetasReparto(q).map((l, i) => el('span', { class: 'num ' + (l === '?' ? 'nose' : 'o' + (i % 5)) },
+      `${l} ${q.total ? Math.round(q.reparto[i].pct) : '–'}%`))
+    : q.categorias.map(c =>
+      el('span', { class: 'num ' + c.clave }, `${ICONO[c.clave] || ''} ${q.total ? Math.round(c.pct) : '–'}%`));
   return el('li', { class: 'fr' },
     el('span', { class: 'letra' }, String(q.indice + 1)),
     el('div', { class: 'fr-cuerpo' },
-      el('div', { class: 'fr-texto' }, q.texto),
-      barraApilada(q)),
-    el('div', { class: 'fr-nums' }, q.categorias.map(c =>
-      el('span', { class: 'num ' + c.clave }, `${ICONO[c.clave] || ''} ${q.total ? Math.round(c.pct) : '–'}%`))));
+      el('div', { class: 'fr-texto md' }, formato(q.texto, { enlaces: false, plano: true })),
+      encuesta ? barraReparto(q) : barraApilada(q)),
+    el('div', { class: 'fr-nums' }, nums));
 }
 
 function pantallaResumen(d) {
@@ -149,7 +170,8 @@ function pantallaResumen(d) {
   return [
     cabecera(d, 'resumen del test'),
     el('h1', { class: 'enunciado compacto' }, 'Resumen'),
-    el('div', { class: 'resumen' }, r.global.categorias.map(c => tile(c, r.global.total))),
+    r.global.categorias.length > 0
+      && el('div', { class: 'resumen' }, r.global.categorias.map(c => tile(c, r.global.total))),
     el('ol', { class: 'tabla-resumen' }, r.preguntas.map(filaResumen)),
   ];
 }

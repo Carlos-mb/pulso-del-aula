@@ -10,6 +10,14 @@
 #   se cierra sola al agotarse.
 # - Las imágenes van en la carpeta media/ (ruta relativa a ella).
 # - La opción "No lo sé / quiero que se explique" se añade sola: no la escribas.
+# - Los textos (enunciado, opciones y explicación) admiten Markdown: `código`, *cursiva*,
+#   **negrita**, listas, bloques de código con ``` y tablas. Ver el tema 'formato' de abajo.
+#   Para varias líneas usa un bloque YAML (`texto: |`). Si el valor empieza por ` o *,
+#   entrecomilla todo el texto.
+# - Una pregunta con `tipo: encuesta` no tiene respuesta correcta (no lleva 'correcta'):
+#   sirve para sondear la experiencia u opinión del aula y solo muestra el reparto
+#   por opción. No cuenta en los aciertos del resumen. Para ofrecer también
+#   «No lo sé / quiero que se explique» añade `nose: true`. Ver el tema 'experiencia'.
 # - Si una opción puede confundirse con un valor YAML (Sí, No, On, Off...),
 #   entrecomíllala.
 
@@ -53,3 +61,73 @@ temas:
           - { imagen: "cuadrado.svg", texto: "Figura 1" }
           - { imagen: "circulo.svg", texto: "Figura 2" }
         correcta: 2
+
+  formato:
+    titulo: "Markdown en el texto (prueba)"
+    preguntas:
+      - texto: "En Linux, la ruta `/home/ana/informe.txt` indica…"
+        opciones:
+          - "La dirección de una página web"
+          - "El fichero `informe.txt`, dentro de la carpeta `ana`"
+          - "Una orden que se ejecuta al *arrancar* el equipo"
+        correcta: 2
+        explicacion: "Una ruta absoluta empieza por `/` y cada `/` separa una carpeta; el último elemento es el **fichero**."
+
+      - texto: |
+          ¿Qué muestra esta orden?
+
+          ```bash
+          ls -l /etc | head -n 3
+          ```
+        opciones:
+          - "Las **3 primeras** líneas del listado de `/etc`"
+          - |
+            Todo el listado de `/etc`
+            y además cuenta las líneas
+          - "Solo los ficheros que empiezan por `h`"
+        correcta: 1
+        explicacion: |
+          La tubería `|` pasa la salida de `ls` a `head`, que se queda con las primeras líneas:
+
+          - `-l`: formato largo
+          - `-n 3`: tres líneas
+
+      - texto: |
+          Según la tabla, ¿qué significa que un servidor responda con el código `404`?
+
+          | Código | Grupo         |
+          |:------:|---------------|
+          | `200`  | Correcto      |
+          | `301`  | Redirección   |
+          | `500`  | Error del servidor |
+        opciones:
+          - "Que la petición ha ido bien"
+          - "Que el recurso pedido **no existe** (error del cliente)"
+          - "Que el servidor ha fallado"
+        correcta: 2
+        explicacion: "Los códigos `4xx` son errores del cliente; la tabla solo recoge algunos ejemplos."
+
+  experiencia:
+    titulo: "Experiencia previa (encuesta)"
+    preguntas:
+      - tipo: encuesta
+        texto: "La terminal de Linux"
+        opciones:
+          - "Nunca"
+          - "Lo he visto"
+          - "Lo he usado alguna vez"
+          - "Lo uso con soltura"
+
+      - tipo: encuesta
+        texto: "¿Has instalado alguna vez un sistema operativo?"
+        opciones: ["Sí", "No"]
+
+      # Se puede mezclar con preguntas de test en el mismo tema.
+      - texto: "¿Qué orden muestra el contenido de una carpeta?"
+        opciones: ["`ls`", "`cd`", "`rm`"]
+        correcta: 1
+
+      - tipo: encuesta
+        texto: "¿Quieres que dediquemos una sesión a repasar la terminal?"
+        nose: true
+        opciones: ["Sí", "No"]

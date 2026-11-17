@@ -2,7 +2,8 @@
 
 Sondeo anónimo de conocimientos en clase. El docente proyecta una pregunta,
 los alumnos responden desde el navegador de su equipo y se muestran los
-porcentajes de **aciertos**, **error** y **no lo sé / quiero que se explique**.
+porcentajes de **aciertos**, **error** y **no lo sé / quiero que se explique**. También hay
+**encuestas**, sin respuesta correcta, para sondear la experiencia u opinión del aula.
 Al acabar el test se presenta un resumen de todas las preguntas.
 
 ## Instalación
@@ -99,7 +100,7 @@ Opciones: `--preguntas CARPETA` (por defecto `./preguntas`), `--puerto N`, `--ho
    Un conectado que no vota mantiene abierta la votación hasta que responda, se agote el tiempo o
    pasen 10 s sin que su navegador consulte al servidor (entonces deja de contar).
 5. Tras la última pregunta se muestra el **resumen**: aciertos, errores y «no lo sé» del conjunto
-   y de cada pregunta.
+   y de cada pregunta. Las encuestas muestran solo su reparto por opción y no cuentan en el conjunto.
 
 **Conectados:** cuenta los navegadores que han consultado al servidor en los últimos 10 segundos
 (cada página lo hace cada segundo), identificados solo por su token aleatorio y sin guardar nada más.
@@ -132,7 +133,38 @@ Cada `.yaml` de la carpeta `preguntas/` define uno o varios temas. Ver `pregunta
   pregunta lo sustituye (`tiempo: 0` = esa pregunta sin límite). Si no aparece en ninguno, sin límite.
 - Las imágenes van en `preguntas/media/` y se referencian por ruta relativa, tanto en el enunciado
   (`imagen:`) como en las opciones.
-- La opción «No lo sé / quiero que se explique» la añade el sistema.
+- Los enunciados, las opciones y las explicaciones admiten **Markdown**:
+  - en línea: `` `código` ``, `*cursiva*` / `_cursiva_`, `**negrita**` / `__negrita__`, `~~tachado~~`
+    y `[texto](https://…)` (solo enlaces `http` y `https`);
+  - bloques: párrafos, encabezados (`#`), listas (`-`, `1.`, también anidadas), citas (`>`), bloques de
+    código (con ```` ``` ````), reglas (`---`) y tablas (`| a | b |`).
+
+  Un salto de línea se respeta tal cual (no hace falta dejar dos espacios). Para varias líneas, usa un
+  bloque YAML (`texto: |`). Si el valor empieza por `` ` `` o `*`, entrecomíllalo en el YAML. En el resumen
+  final cada pregunta ocupa una línea, con el Markdown aplanado.
+  Las imágenes de Markdown (`![](…)`) **no** se admiten: usa `imagen:`. Tampoco hay HTML: `<b>` o
+  `<script>` se muestran literales. Los enlaces de las opciones no se pueden pulsar.
+  Los nombres con guion bajo (`mi_variable`) se respetan, pero `__init__` se lee como negrita:
+  pónlo entre acentos graves.
+- La opción «No lo sé / quiero que se explique» la añade el sistema en las preguntas de test.
+
+### Encuestas
+
+Una pregunta con `tipo: encuesta` sirve para empezar la sesión viendo el nivel de partida de la clase,
+o para pedir una opinión. **No tiene respuesta correcta**: no lleva `correcta` (si se pone, da error).
+
+```yaml
+- tipo: encuesta
+  texto: "La terminal de Linux"
+  opciones: ["Nunca", "Lo he visto", "Lo he usado alguna vez", "Lo uso con soltura"]
+```
+
+- Cada alumno elige **una opción**, y se cierra como las demás (todos han votado, tiempo agotado o el docente).
+- Los resultados muestran el **reparto por opción** (número y porcentaje). No hay aciertos ni error,
+  y el alumno no recibe ninguna solución, solo la confirmación de que su respuesta quedó registrada.
+- «No lo sé / quiero que se explique» **no se añade**. Se activa con `nose: true`.
+- En el resumen final se ve su reparto, pero **no cuentan** en los aciertos, errores y «no lo sé»
+  del conjunto. Se pueden mezclar con preguntas de test en un mismo tema.
 - Al arrancar se valida todo y se muestran los errores con fichero, tema y pregunta.
 
 ## Anonimato y seguridad
@@ -153,16 +185,16 @@ Los colores están como variables CSS al principio de `pulso/static/estilos.css`
 ## Estructura
 
 ```
-pulso/tipos.py      tipos de pregunta (una clase por tipo; hoy: una_opcion)
+pulso/tipos.py      tipos de pregunta (una clase por tipo; hoy: una_opcion y encuesta)
 pulso/cargador.py   lectura y validación del YAML (temas, tiempos, imágenes)
 pulso/estado.py     estado de la sesión y fases (inicio → sala → abierta → cerrada → resumen), temporizador y presencia
 pulso/app.py        rutas FastAPI
-pulso/static/       vistas de alumno y docente (JS plano, sin paso de build)
+pulso/static/       vistas de alumno y docente (JS plano, sin paso de build); markdown.js es el Markdown
 pulso/recursos.py   localiza static/ también cuando se empaquete con PyInstaller
-tests/              pytest
+tests/              pytest (las pruebas del Markdown están en JavaScript: se ejecutan con Node si está instalado)
 ```
 
 ## Estado
 
-Solo tipo `una_opcion`. Pendiente: verdadero/falso, multiopción (puntuación proporcional penalizando
-incorrectas), numérica, Markdown en enunciados, modo remoto, empaquetado.
+Tipos: `una_opcion` y `encuesta`. Pendiente: verdadero/falso, multiopción (puntuación proporcional penalizando
+incorrectas), numérica, modo remoto, empaquetado.

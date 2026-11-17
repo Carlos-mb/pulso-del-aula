@@ -289,6 +289,8 @@ mostrarBarra();
 // ---------- teclado ----------
 document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.altKey || e.metaKey) return;
+  // Escribiendo en un campo (la clave): las teclas son suyas, no atajos (si no, Intro no envía el formulario).
+  if (e.target instanceof Element && e.target.closest('input, textarea, select')) return;
   const enTema = vista.fase !== 'inicio';
   if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); accionPrincipal(); }
   else if (e.key === 'ArrowRight' && enTema) ejecutar('siguiente');

@@ -8,7 +8,9 @@ Fases:
     resumen -> test terminado; se muestra el resumen de todas las preguntas
 
 Una votación se cierra sola en dos casos: cuando se agota el tiempo de la
-pregunta (si lo tiene) y cuando han votado todos los alumnos conectados.
+pregunta (si lo tiene) y cuando han votado todos los alumnos conectados. En una
+encuesta, además, al cerrarse porque han respondido todos se pasa sola a la
+siguiente pregunta (o al resumen, si era la última): sus resultados se ven en el resumen.
 Se comprueba al atender cada petición (los clientes consultan cada segundo),
 así que no hace falta ningún hilo temporizador. Si el docente reabre una
 pregunta, esta ya no se cierra por «todos han votado» (solo por tiempo o a mano).
@@ -18,15 +20,22 @@ intermedios, así que no hace falta bloqueo.
 """
 from __future__ import annotations
 
+import secrets
 import time
 from typing import Any, Callable
 
+from .acceso import Bloqueado, CodigoIncorrecto, LimiteFallos, NoAdmitido, coincide, normaliza_codigo
 from .cargador import Tema
 from .tipos import PreguntaBase
 
 # Un alumno cuenta como conectado si ha consultado el servidor hace menos de
 # estos segundos (la página lo hace cada segundo).
 SEGUNDOS_PRESENCIA = 10.0
+
+# Modo remoto: máximo de alumnos admitidos, y de códigos erróneos por minuto entre todos
+# (los alumnos del aula comparten IP, así que no se puede limitar por IP).
+MAX_ADMITIDOS = 1000
+FALLOS_CODIGO_POR_MINUTO = 120
 
 
 class EstadoInvalido(Exception):
@@ -39,10 +48,17 @@ class Sesion:
         temas: dict[str, Tema],
         url_alumnos: str = "",
         reloj: Callable[[], float] = time.monotonic,
+        codigo: str | None = None,
     ) -> None:
         self.temas = temas
         self.url_alumnos = url_alumnos
         self.reloj = reloj
+        # Identifica esta ejecución del servidor: si cambia, las páginas abiertas se recargan solas.
+        self.arranque = secrets.token_hex(4)
+        # Modo remoto: código de sala que hay que dar para participar. None = red local, sin código.
+        self.codigo = codigo
+        self.admitidos: set[str] = set()
+        self.limite_codigo = LimiteFallos(FALLOS_CODIGO_POR_MINUTO, 60.0, reloj)
         # Presencia anónima: {token: instante de la última consulta}. Solo en memoria.
         self.vistos: dict[str, float] = {}
         self._ultima_poda = reloj()
@@ -75,7 +91,7 @@ class Sesion:
         self._ir_a(0)
 
     def cerrar(self) -> None:
-        self._tic()
+        self._tic(avanzar=False)
         if self.tema is None:
             raise EstadoInvalido("No hay tema elegido")
         if self.fase == "abierta":
@@ -88,7 +104,7 @@ class Sesion:
         Como los conectados ya habían votado, no se vuelve a cerrar por «todos han
         votado»: se cierra por tiempo o cuando lo decida el docente.
         """
-        self._tic()
+        self._tic(avanzar=False)
         if self.fase != "cerrada":
             raise EstadoInvalido("Solo se puede reabrir una pregunta cerrada")
         self.cerradas.pop(self.pregunta.id, None)
@@ -96,7 +112,7 @@ class Sesion:
 
     def reiniciar(self) -> None:
         """Borra las respuestas de la pregunta actual y la abre de nuevo."""
-        self._tic()
+        self._tic(avanzar=False)
         if self.fase not in ("abierta", "cerrada"):
             raise EstadoInvalido("No hay una pregunta activa")
         self.respuestas.pop(self.pregunta.id, None)
@@ -108,6 +124,31 @@ class Sesion:
 
     def anterior(self) -> None:
         self._navegar(-1)
+
+    # ---------- acceso de los alumnos (modo remoto) ----------
+    def admitir(self, token: str, codigo: str) -> None:
+        """Da por válido el token de un alumno si el código de sala es correcto.
+
+        Se comprueba una vez por alumno; después basta el token. Con muchos fallos seguidos
+        (de cualquiera) se rechaza todo intento nuevo, incluso con el código bueno, hasta
+        que pase un minuto: los alumnos ya admitidos no se ven afectados.
+        """
+        if self.codigo is None or token in self.admitidos:
+            return
+        if not 8 <= len(token) <= 64:
+            raise ValueError("token no válido")
+        if self.limite_codigo.bloqueado():
+            raise Bloqueado
+        if not coincide(normaliza_codigo(codigo), self.codigo):
+            self.limite_codigo.fallo()
+            raise CodigoIncorrecto
+        if len(self.admitidos) >= MAX_ADMITIDOS:
+            raise EstadoInvalido("La sala está llena")
+        self.admitidos.add(token)
+
+    def exige_admitido(self, token: str | None) -> None:
+        if self.codigo is not None and (token is None or token not in self.admitidos):
+            raise NoAdmitido
 
     # ---------- presencia ----------
     def visto(self, token: str | None) -> None:
@@ -126,6 +167,7 @@ class Sesion:
 
     # ---------- acción del alumno ----------
     def responder(self, token: str, respuesta: Any) -> None:
+        self.exige_admitido(token)
         self._tic()
         if self.fase != "abierta":
             raise EstadoInvalido("La votación no está abierta")
@@ -161,14 +203,28 @@ class Sesion:
         resp = self._resp()
         return bool(conectados) and all(t in resp for t in conectados)
 
-    def _tic(self) -> None:
-        """Cierra la votación si se ha agotado el tiempo o si ya han votado todos."""
+    def _tic(self, avanzar: bool = True) -> None:
+        """Cierra la votación si se ha agotado el tiempo o si ya han votado todos.
+
+        Si es una encuesta y han respondido todos, pasa además a la siguiente pregunta, salvo con
+        `avanzar=False`. Las acciones del docente lo usan así: si pulsa «cerrar» o «siguiente» justo
+        cuando acaban de responder todos, su pulsación no debe caer sobre la pregunta recién abierta.
+        """
         if self.fase != "abierta":
             return
         if self.limite is not None and self.reloj() >= self.limite:
             self._cerrar_pregunta("tiempo")
         elif self.cierre_auto and self._todos_han_votado():
             self._cerrar_pregunta("todos")
+            if avanzar and not self.pregunta.puntua:
+                self._pasar_a_la_siguiente()
+
+    def _pasar_a_la_siguiente(self) -> None:
+        assert self.tema is not None
+        if self.indice + 1 >= len(self.tema.preguntas):
+            self.fase, self.limite = "resumen", None
+        else:
+            self._ir_a(self.indice + 1)
 
     def _ir_a(self, i: int) -> None:
         self.indice = i
@@ -178,7 +234,7 @@ class Sesion:
             self._abrir_pregunta()
 
     def _navegar(self, paso: int) -> None:
-        self._tic()
+        self._tic(avanzar=False)
         if self.tema is None:
             raise EstadoInvalido("No hay tema elegido")
         if self.fase == "abierta":
@@ -204,10 +260,10 @@ class Sesion:
 
     # ---------- lo que se envía a los clientes ----------
     def resumen(self) -> dict:
-        """Aciertos/errores/no lo sé de cada pregunta y del conjunto.
+        """Aciertos/errores/no lo sé de cada pregunta y del conjunto, y el reparto de respuestas.
 
-        Las encuestas (sin respuesta correcta) aparecen con su reparto por opción y
-        no cuentan en el conjunto.
+        Cada pregunta lleva sus opciones con el número y el porcentaje de respuestas de cada una.
+        Las encuestas (sin respuesta correcta) no cuentan en el conjunto.
         """
         assert self.tema is not None
         filas = []
@@ -216,16 +272,12 @@ class Sesion:
         for i, p in enumerate(self.tema.preguntas):
             r = p.resultados(list(self.respuestas.get(p.id, {}).values()))
             fila = {"indice": i, "texto": p.texto, "tipo": p.tipo, "total": r["total"],
-                    "categorias": r["categorias"]}
+                    "categorias": r["categorias"], "opciones": p.resumen_opciones(r)}
             if p.puntua:
                 total += r["total"]
                 for c in r["categorias"]:
                     g = globales.setdefault(c["clave"], {"clave": c["clave"], "etiqueta": c["etiqueta"], "n": 0})
                     g["n"] += c["n"]
-            else:
-                fila["reparto"] = [*r["opciones"], *([r["nose"]] if r["nose"] else [])]
-                fila["con_nose"] = r["nose"] is not None
-                fila["multiple"] = p.con_varias
             filas.append(fila)
         for g in globales.values():
             g["pct"] = round(100 * g["n"] / total, 1) if total else 0.0
@@ -236,7 +288,7 @@ class Sesion:
 
     def vista(self, token: str | None = None, docente: bool = False) -> dict:
         self._tic()
-        v: dict[str, Any] = {"fase": self.fase}
+        v: dict[str, Any] = {"fase": self.fase, "arranque": self.arranque}
         if self.tema is not None:
             v["tema"] = {"id": self.tema.id, "titulo": self.tema.titulo}
             v["total"] = len(self.tema.preguntas)
@@ -266,5 +318,6 @@ class Sesion:
                 for t in self.temas.values()
             ]
             v["url_alumnos"] = self.url_alumnos
+            v["codigo"] = self.codigo       # None en la red local
             v["conectados"] = self.conectados()
         return v

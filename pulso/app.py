@@ -6,11 +6,13 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StrictInt, StrictStr
 
+from .acceso import (AccesoDocente, Bloqueado, CodigoIncorrecto, NoAdmitido, codigo_nuevo,
+                     qr_svg)
 from .cargador import Tema
 from .estado import EstadoInvalido, Sesion
 from .recursos import recurso
@@ -28,9 +30,21 @@ def ip_lan() -> str:
         s.close()
 
 
+COOKIE_DOCENTE = "pulso_docente"
+
+
 class Respuesta(BaseModel):
     token: str = Field(min_length=8, max_length=64)
     respuesta: StrictInt | StrictStr | list[StrictInt]
+
+
+class Entrada(BaseModel):
+    token: str = Field(min_length=8, max_length=64)
+    codigo: str = Field(max_length=32)
+
+
+class Clave(BaseModel):
+    clave: str = Field(max_length=200)
 
 
 def crear_app(
@@ -38,9 +52,21 @@ def crear_app(
     directorio_preguntas: Path,
     puerto: int,
     reloj: Callable[[], float] = time.monotonic,
+    url_publica: str | None = None,
+    clave: str | None = None,
 ) -> FastAPI:
+    """`url_publica` activa el modo remoto (túnel): código de sala para los alumnos y clave
+    obligatoria para el docente. Sin ella, red local: todo como siempre."""
+    remoto = url_publica is not None
+    if remoto and not clave:
+        raise ValueError("el modo remoto necesita una clave para el panel del docente")
     ip = ip_lan()
-    sesion = Sesion(temas, url_alumnos=f"http://{ip}:{puerto}/", reloj=reloj)
+    if remoto:
+        base = url_publica.rstrip("/")
+        sesion = Sesion(temas, url_alumnos=base + "/", reloj=reloj, codigo=codigo_nuevo())
+    else:
+        sesion = Sesion(temas, url_alumnos=f"http://{ip}:{puerto}/", reloj=reloj)
+    acceso = AccesoDocente(clave or "", reloj)
     locales = {"127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost", ip}
 
     def solo_local(request: Request) -> None:
@@ -50,6 +76,20 @@ def crear_app(
                 403, "El panel del docente solo es accesible desde el equipo del servidor"
             )
 
+    def pagina_docente_ok(request: Request) -> None:
+        # En remoto el túnel hace que todo parezca local: la protección es la clave.
+        if not remoto:
+            solo_local(request)
+
+    def autoriza_docente(request: Request) -> None:
+        pagina_docente_ok(request)
+        if acceso.requiere and not acceso.valido(request.cookies.get(COOKIE_DOCENTE)):
+            raise HTTPException(401, "clave")
+
+    def cubo(request: Request) -> str:
+        """Quién intenta entrar: la IP real que indica Cloudflare, o «local» si no hay túnel."""
+        return request.headers.get("cf-connecting-ip") or "local"
+
     app = FastAPI(title="Pulso del aula", docs_url=None, redoc_url=None)
     app.state.sesion = sesion
 
@@ -58,7 +98,21 @@ def crear_app(
         resp = await call_next(request)
         if not request.url.path.startswith("/media/"):
             resp.headers["Cache-Control"] = "no-cache"
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        resp.headers["Referrer-Policy"] = "no-referrer"
         return resp
+
+    @app.exception_handler(NoAdmitido)
+    async def _no_admitido(_: Request, e: NoAdmitido) -> JSONResponse:
+        return JSONResponse({"detail": "codigo"}, status_code=401)
+
+    @app.exception_handler(CodigoIncorrecto)
+    async def _codigo_incorrecto(_: Request, e: CodigoIncorrecto) -> JSONResponse:
+        return JSONResponse({"detail": "Código incorrecto"}, status_code=403)
+
+    @app.exception_handler(Bloqueado)
+    async def _bloqueado(_: Request, e: Bloqueado) -> JSONResponse:
+        return JSONResponse({"detail": "Demasiados intentos. Espera un minuto."}, status_code=429)
 
     @app.exception_handler(EstadoInvalido)
     async def _estado_invalido(_: Request, e: EstadoInvalido) -> JSONResponse:
@@ -73,15 +127,21 @@ def crear_app(
     async def pagina_alumno() -> FileResponse:
         return FileResponse(recurso("static", "alumno.html"))
 
-    @app.get("/docente", include_in_schema=False, dependencies=[Depends(solo_local)])
+    @app.get("/docente", include_in_schema=False, dependencies=[Depends(pagina_docente_ok)])
     async def pagina_docente() -> FileResponse:
         return FileResponse(recurso("static", "docente.html"))
 
     # --- API de alumnos ---
     @app.get("/api/estado")
     async def estado(token: str | None = None) -> dict:
+        sesion.exige_admitido(token)
         sesion.visto(token)  # la propia consulta periódica indica que el alumno sigue conectado
         return sesion.vista(token)
+
+    @app.post("/api/entrar")
+    async def entrar(datos: Entrada) -> dict:
+        sesion.admitir(datos.token, datos.codigo)
+        return {"ok": True}
 
     @app.post("/api/responder")
     async def responder(datos: Respuesta) -> dict:
@@ -89,7 +149,26 @@ def crear_app(
         return {"ok": True}
 
     # --- API del docente (solo desde el propio equipo) ---
-    docente = APIRouter(prefix="/api/docente", dependencies=[Depends(solo_local)])
+    @app.post("/api/docente/entrar", dependencies=[Depends(pagina_docente_ok)])
+    async def entrar_docente(datos: Clave, request: Request, respuesta: Response) -> dict:
+        if acceso.requiere:
+            try:
+                token = acceso.entrar(datos.clave, cubo(request))
+            except CodigoIncorrecto:
+                raise HTTPException(403, "Clave incorrecta") from None
+            # «Secure» solo si la petición llegó por el túnel (en http://localhost no se enviaría)
+            https = remoto and url_publica.startswith("https://") and "cf-connecting-ip" in request.headers
+            respuesta.set_cookie(COOKIE_DOCENTE, token, max_age=AccesoDocente.HORAS * 3600,
+                                 httponly=True, samesite="strict", secure=https, path="/")
+        return {"ok": True}
+
+    docente = APIRouter(prefix="/api/docente", dependencies=[Depends(autoriza_docente)])
+
+    @docente.get("/qr.svg")
+    async def qr() -> Response:
+        if sesion.codigo is None:
+            raise HTTPException(404, "no hay código de sala (modo local)")
+        return Response(qr_svg(f"{sesion.url_alumnos}?c={sesion.codigo}"), media_type="image/svg+xml")
 
     @docente.get("/estado")
     async def estado_docente() -> dict:

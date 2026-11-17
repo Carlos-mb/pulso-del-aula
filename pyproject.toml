@@ -7,6 +7,7 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
     "pyyaml>=6",
+    "segno>=1.5",
 ]
 
 [project.optional-dependencies]

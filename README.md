@@ -34,7 +34,8 @@ py -m venv .venv
 ```
 
 Para actualizar más adelante: `git pull` dentro de la carpeta (no hay que reinstalar). Si el servidor
-estaba en marcha, hay que pararlo y volver a arrancarlo para que cargue el código nuevo.
+estaba en marcha, hay que pararlo y volver a arrancarlo para que cargue el código nuevo. Las pantallas
+que estuvieran abiertas (docente y alumnos) se recargan solas en cuanto el servidor vuelve a estar en marcha.
 
 ## Arrancar
 
@@ -52,7 +53,8 @@ esperando (se para con `Ctrl+C`):
   se proyecta; solo funciona en ese equipo.
 - **Alumnos**: la URL que aparece en la sala de espera (`http://IP-del-docente:8000/`).
 
-Opciones: `--preguntas CARPETA` (por defecto `./preguntas`), `--puerto N`, `--host H`.
+Opciones: `--preguntas CARPETA` (por defecto `./preguntas`), `--puerto N`, `--host H`, y las del
+[modo remoto](#modo-remoto-túnel-de-cloudflare): `--url-publica URL` y `--clave CLAVE`.
 
 ### Antes de la primera clase
 
@@ -99,8 +101,14 @@ Opciones: `--preguntas CARPETA` (por defecto `./preguntas`), `--puerto N`, `--ho
    al menos un alumno conectado, y como cierra en el último voto, ese alumno ya no puede cambiar su respuesta.
    Un conectado que no vota mantiene abierta la votación hasta que responda, se agote el tiempo o
    pasen 10 s sin que su navegador consulte al servidor (entonces deja de contar).
-5. Tras la última pregunta se muestra el **resumen**: aciertos, parciales (solo en `multiopcion`), errores y «no lo sé» del conjunto
-   y de cada pregunta. Las encuestas muestran solo su reparto por opción y no cuentan en el conjunto.
+   **Excepción: las encuestas.** Si la votación termina porque **han respondido todos**, no se muestran
+   resultados: se pasa sola a la siguiente pregunta (o al resumen, si era la última). Sus resultados se ven
+   en el resumen, o volviendo a la pregunta con `←`. Si termina por tiempo o porque la cierra el docente,
+   se muestran los resultados como en cualquier otra pregunta.
+5. Tras la última pregunta se muestra el **resumen**: aciertos, parciales (solo en `multiopcion`), errores y
+   «no lo sé» del conjunto y de cada pregunta. Cada pregunta lista además **sus respuestas con el porcentaje
+   de alumnos que eligió cada una** (la correcta, con ✓, y «no lo sé» aparte). Las encuestas solo muestran ese
+   reparto y no cuentan en el conjunto.
 
 **Conectados:** cuenta los navegadores que han consultado al servidor en los últimos 10 segundos
 (cada página lo hace cada segundo), identificados solo por su token aleatorio y sin guardar nada más.
@@ -123,6 +131,92 @@ La barra de controles aparece al mover el ratón y se oculta sola a los 3 segund
   «han votado todos» (los conectados ya habían votado): solo por tiempo o a mano.
 - «Borrar respuestas» deja la pregunta a cero y la abre de nuevo.
 - La pantalla se ajusta sola: si el contenido no cabe en la ventana, reduce el tamaño de letra.
+
+## Modo remoto (túnel de Cloudflare)
+
+Para dar la clase con los alumnos conectados **por internet** (desde sus equipos o móviles, sin que lleguen
+a la red del docente) se publica el servidor mediante un túnel inverso de Cloudflare:
+
+```
+alumnos ──► https://preguntas.ifct0109.online ──► Cloudflare ──► cloudflared (equipo del docente) ──► http://localhost:8000
+```
+
+El servidor no se expone directamente: solo `cloudflared`, que corre en el mismo equipo, llega a él.
+
+### Arrancar en modo remoto
+
+```bash
+export PULSO_CLAVE='una-clave-larga-y-secreta'          # Windows (PowerShell): $env:PULSO_CLAVE = '...'
+.venv/bin/python -m pulso --url-publica https://preguntas.ifct0109.online
+```
+
+`--url-publica` activa el modo remoto. Sin esa opción todo funciona como antes (red local, sin código).
+En modo remoto:
+
+- La **clave del docente es obligatoria**: si falta (`PULSO_CLAVE` o `--clave`), el servidor no arranca.
+  Mejor la variable de entorno, porque `--clave` queda en el historial y en la lista de procesos.
+- El servidor escucha solo en `127.0.0.1` (se puede cambiar con `--host`), de modo que nadie lo alcanza
+  saltándose el túnel.
+- Al arrancar imprime el **código de sala** (6 caracteres, sin `0 O 1 I L`). Vale para toda la sesión y
+  **cambia cada vez que se arranca el servidor**.
+
+### Cómo entran los alumnos
+
+En la sala de espera, el docente proyecta un **QR**, la dirección y el **código**. Los alumnos pueden:
+
+- **Leer el QR** con el móvil: la dirección ya lleva el código y entran directamente.
+- **Teclear la dirección** en el navegador y escribir el código (admite minúsculas, espacios y guiones).
+
+El código se comprueba una vez por alumno. Si el servidor se reinicia, el código cambia y a los alumnos
+se les vuelve a pedir. La dirección y el código también aparecen en el pie de la pantalla durante la votación.
+Sin el código no se puede ver el estado, votar ni contar como conectado.
+
+### Panel del docente
+
+El docente abre <http://localhost:8000/docente> en su equipo e introduce la **clave** (se pide siempre, también
+en `localhost`, porque el túnel hace que cualquier petición parezca local; queda recordada en una cookie
+durante 12 horas). El panel también se puede abrir por la dirección pública, con la misma clave.
+
+### Configurar el túnel (una sola vez)
+
+Con [`cloudflared`](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
+instalado, y el dominio gestionado en Cloudflare:
+
+```bash
+cloudflared tunnel login                                   # autoriza la cuenta y el dominio
+cloudflared tunnel create pulso                            # crea el túnel y su fichero de credenciales
+cloudflared tunnel route dns pulso preguntas.ifct0109.online
+```
+
+Fichero `~/.cloudflared/config.yml`:
+
+```yaml
+tunnel: pulso
+credentials-file: /home/USUARIO/.cloudflared/ID-DEL-TUNEL.json
+ingress:
+  - hostname: preguntas.ifct0109.online
+    service: http://localhost:8000
+  - service: http_status:404
+```
+
+Cada clase: arrancar el túnel (`cloudflared tunnel run pulso`) y el servidor (comando de arriba). Para probar
+antes de tener el dominio, un túnel temporal da una dirección `https://….trycloudflare.com` sin configurar nada:
+`cloudflared tunnel --url http://localhost:8000` (y pasar esa dirección a `--url-publica`).
+
+### Seguridad
+
+- **Código de sala** (≈ 9·10⁸ combinaciones). Los intentos erróneos se limitan **en conjunto** (120 por minuto
+  entre todos), no por IP, porque todos los alumnos del aula salen con la misma IP pública. Si se supera,
+  las entradas nuevas se rechazan durante un minuto (incluso con el código bueno); los alumnos que ya han
+  entrado no se ven afectados.
+- **Clave del docente**: se compara en tiempo constante y se limita a 10 fallos por minuto para cada origen
+  (la IP real que indica Cloudflare en `Cf-Connecting-Ip`; el propio equipo del docente cuenta aparte).
+  La cookie es `HttpOnly` y `SameSite=Strict` (y `Secure` cuando llega por el túnel).
+- Los alumnos siguen siendo anónimos: se guarda un token aleatorio y nada más; no se guarda la IP.
+- Las consultas cada segundo de cada alumno pasan por Cloudflare: con una clase normal (decenas de alumnos)
+  es un tráfico pequeño. Las páginas se sirven con `Cache-Control: no-cache`; si tras actualizar
+  el programa los alumnos siguen viendo una versión antigua, purga la caché del dominio en Cloudflare.
+- En el panel de Cloudflare se pueden añadir reglas propias (límite de peticiones, WAF) sin tocar nada aquí.
 
 ## Preguntas
 
@@ -159,12 +253,13 @@ o para pedir una opinión. **No tiene respuesta correcta**: no lleva `correcta` 
   opciones: ["Nunca", "Lo he visto", "Lo he usado alguna vez", "Lo uso con soltura"]
 ```
 
-- Cada alumno elige **una opción** (o varias, con `multiple: true`; ver abajo), y se cierra como las demás
-  (todos han votado, tiempo agotado o el docente).
+- Cada alumno elige **una opción** (o varias, con `multiple: true`; ver abajo). La votación se cierra cuando
+  han respondido todos, se agota el tiempo o la cierra el docente. En el primer caso **pasa sola a la
+  siguiente pregunta**, sin mostrar resultados.
 - Los resultados muestran el **reparto por opción** (número y porcentaje). No hay aciertos ni error,
   y el alumno no recibe ninguna solución, solo la confirmación de que su respuesta quedó registrada.
 - «No lo sé / quiero que se explique» **no se añade**. Se activa con `nose: true`.
-- En el resumen final se ve su reparto, pero **no cuentan** en los aciertos, errores y «no lo sé»
+- En el resumen final se ve su reparto (cada respuesta con su porcentaje), pero **no cuentan** en los aciertos, errores y «no lo sé»
   del conjunto. Se pueden mezclar con preguntas de test en un mismo tema.
 - Al arrancar se valida todo y se muestran los errores con fichero, tema y pregunta.
 
@@ -211,9 +306,10 @@ respuesta correcta.
 
 - El navegador del alumno genera un número aleatorio (`localStorage`) que solo sirve para contar un voto
   por pregunta. No se guarda IP ni nada identificable, y no aparece en ninguna pantalla.
-- El panel del docente solo responde a conexiones desde el propio equipo del servidor.
-  **Si algún día se publica mediante un túnel (modo remoto), esta comprobación deja de proteger**,
-  porque el túnel conecta desde `localhost`: habría que añadir una clave.
+- En modo local, el panel del docente solo responde a conexiones desde el propio equipo del servidor
+  (se puede añadir además una clave con `PULSO_CLAVE`). **Esa comprobación no protege detrás de un
+  túnel**, porque el túnel conecta desde `localhost`: por eso el [modo remoto](#modo-remoto-túnel-de-cloudflare)
+  exige clave y código de sala. No publiques el servidor con un túnel sin usar `--url-publica`.
 - La respuesta correcta y la explicación no se envían a los alumnos hasta que se cierra la votación.
 
 ## Estilo
@@ -225,6 +321,7 @@ Los colores están como variables CSS al principio de `pulso/static/estilos.css`
 ## Estructura
 
 ```
+pulso/acceso.py     modo remoto: código de sala, clave del docente, límites de intentos y QR
 pulso/tipos.py      tipos de pregunta (una clase por tipo; hoy: una_opcion, multiopcion y encuesta)
 pulso/cargador.py   lectura y validación del YAML (temas, tiempos, imágenes)
 pulso/estado.py     estado de la sesión y fases (inicio → sala → abierta → cerrada → resumen), temporizador y presencia
@@ -236,5 +333,5 @@ tests/              pytest (las pruebas del Markdown están en JavaScript: se ej
 
 ## Estado
 
-Tipos: `una_opcion`, `multiopcion` y `encuesta` (esta, con una opción o con varias). Pendiente: verdadero/falso,
-numérica, modo remoto, empaquetado.
+Tipos: `una_opcion`, `multiopcion` y `encuesta` (esta, con una opción o con varias). Modo remoto con túnel de
+Cloudflare, código de sala y QR. Pendiente: verdadero/falso, numérica, empaquetado.

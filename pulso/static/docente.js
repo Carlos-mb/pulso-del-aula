@@ -25,6 +25,27 @@ async function ejecutar(ruta) {
 
 const elegirTema = id => ejecutar('tema/' + encodeURIComponent(id));
 
+// Si el servidor pide la clave (modo remoto, o local si se configuró), se muestra el formulario.
+async function entrarDocente(clave) {
+  try {
+    await api('/api/docente/entrar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clave }),
+    });
+  } catch (e) { return e.message; }
+  refrescar();
+  return null;
+}
+
+function pedirClave() {
+  pie.replaceChildren();
+  barra.replaceChildren();
+  app.replaceChildren(
+    el('h1', { class: 'titulo-inicio' }, 'pulso del aula'),
+    formularioAcceso({ titulo: 'clave del docente', tipo: 'password', enviar: entrarDocente }));
+}
+
 function accionPrincipal() {
   if (vista.fase === 'sala') ejecutar('empezar');
   else if (vista.fase === 'abierta') ejecutar('cerrar');
@@ -58,7 +79,14 @@ function pantallaSala(d) {
     el('div', { class: 'conectados' },
       el('div', { class: 'conectados-n' }, String(n)),
       el('div', { class: 'conectados-etq' }, n === 1 ? 'persona conectada' : 'personas conectadas')),
-    el('p', { class: 'sala-url' }, 'entrad en ', el('b', {}, d.url_alumnos)),
+    d.codigo
+      ? el('div', { class: 'acceso-remoto' },
+        el('img', { class: 'qr', src: '/api/docente/qr.svg?c=' + encodeURIComponent(d.codigo), alt: 'QR de acceso' }),
+        el('div', { class: 'acceso-texto' },
+          el('p', { class: 'sala-url' }, 'entrad en ', el('b', {}, d.url_alumnos)),
+          el('p', { class: 'eyebrow' }, 'e introducid el código'),
+          el('div', { class: 'codigo-sala' }, d.codigo)))
+      : el('p', { class: 'sala-url' }, 'entrad en ', el('b', {}, d.url_alumnos)),
     el('p', { class: 'sala-pista' }, 'pulsa Espacio para empezar cuando estén listos'),
   ];
 }
@@ -140,41 +168,34 @@ function barraApilada(q) {
     q.categorias.map(c => c.pct > 0 && el('div', { class: 'seg ' + c.clave, style: `width:${c.pct}%` })));
 }
 
-// Una encuesta no tiene aciertos ni errores: su barra reparte los votos por opción.
-function etiquetasReparto(q) {
-  return q.reparto.map((_, i) => (q.con_nose && i === q.reparto.length - 1 ? '?' : LETRAS[i]));
-}
-
-function barraReparto(q) {
-  if (!q.total) return el('div', { class: 'sin-datos' }, 'sin respuestas');
-  if (q.multiple) {   // los porcentajes no suman 100 %: una columna por opción en lugar de una barra apilada
-    return el('div', { class: 'columnas' }, q.reparto.map((o, i) =>
-      el('div', { class: 'col' },
-        el('div', {
-          class: 'col-relleno ' + (q.con_nose && i === q.reparto.length - 1 ? 'nose' : 'o' + (i % 5)),
-          style: `height:${o.pct}%`,
-        }))));
-  }
-  return el('div', { class: 'apilada' },
-    q.reparto.map((o, i) => o.pct > 0 && el('div', {
-      class: 'seg ' + (q.con_nose && i === q.reparto.length - 1 ? 'nose' : 'o' + (i % 5)),
-      style: `width:${o.pct}%`,
-    })));
+// Respuestas de una pregunta con el porcentaje de alumnos que eligió cada una.
+// Si se podían marcar varias, los porcentajes no suman 100 %.
+function opcionesResumen(q) {
+  return el('div', { class: 'fr-opciones' }, q.opciones.map((o, i) => {
+    const pct = q.total ? Math.round(o.pct) : null;
+    return el('span', {
+      class: 'fr-op' + (o.correcta ? ' correcta' : '') + (o.nose ? ' nose' : ''),
+      style: `--p:${o.pct}%`,
+    },
+      el('span', { class: 'letra-op' }, o.nose ? '?' : LETRAS[i]),
+      el('span', { class: 'texto-op md' },
+        o.imagen && el('img', { class: 'img-resumen', src: o.imagen, alt: '' }),
+        o.texto && formato(o.texto, { enlaces: false, plano: true })),
+      o.correcta && el('b', { class: 'marca' }, '✓'),
+      el('span', { class: 'pct-op' }, pct === null ? '–%' : `${pct}%`));
+  }));
 }
 
 function filaResumen(q) {
-  const encuesta = q.tipo === 'encuesta';
-  const nums = encuesta
-    ? etiquetasReparto(q).map((l, i) => el('span', { class: 'num ' + (l === '?' ? 'nose' : 'o' + (i % 5)) },
-      `${l} ${q.total ? Math.round(q.reparto[i].pct) : '–'}%`))
-    : q.categorias.map(c =>
-      el('span', { class: 'num ' + c.clave }, `${ICONO[c.clave] || ''} ${q.total ? Math.round(c.pct) : '–'}%`));
+  const encuesta = q.tipo === 'encuesta';   // sin aciertos ni errores: solo el reparto de respuestas
   return el('li', { class: 'fr' },
     el('span', { class: 'letra' }, String(q.indice + 1)),
     el('div', { class: 'fr-cuerpo' },
       el('div', { class: 'fr-texto md' }, formato(q.texto, { enlaces: false, plano: true })),
-      encuesta ? barraReparto(q) : barraApilada(q)),
-    el('div', { class: 'fr-nums' }, nums));
+      opcionesResumen(q),
+      !encuesta && barraApilada(q)),
+    !encuesta && el('div', { class: 'fr-nums' }, q.categorias.map(c =>
+      el('span', { class: 'num ' + c.clave }, `${ICONO[c.clave] || ''} ${q.total ? Math.round(c.pct) : '–'}%`))));
 }
 
 function pantallaResumen(d) {
@@ -213,7 +234,8 @@ function render(d) {
   app.replaceChildren(...contenido.flat().filter(Boolean));
 
   pie.replaceChildren(d.fase === 'abierta' || d.fase === 'inicio'
-    ? el('span', {}, 'alumnos, entrad en ', el('b', {}, d.url_alumnos))
+    ? el('span', {}, 'alumnos, entrad en ', el('b', {}, d.url_alumnos),
+      d.codigo && [' · código ', el('b', {}, d.codigo)])
     : '');
   actualizarBarra(d);
   ajustar();
@@ -278,4 +300,4 @@ document.addEventListener('keydown', e => {
   }
 });
 
-refrescar = sondear(() => '/api/docente/estado', render, 700);
+refrescar = sondear(() => '/api/docente/estado', render, 700, pedirClave);

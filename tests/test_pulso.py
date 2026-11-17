@@ -3,6 +3,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from pulso.__main__ import main
+from pulso.acceso import normaliza_codigo, qr_svg
 from pulso.app import crear_app
 from pulso.cargador import ErrorBanco, cargar
 
@@ -136,7 +138,7 @@ def inicia(docente, tema):
 
 def test_flujo_completo(cliente):
     docente, alumno = cliente
-    assert estado(alumno) == {"fase": "inicio"}
+    assert estado(alumno)["fase"] == "inicio" and "tema" not in estado(alumno)
     assert responde(alumno, TOKEN_A, 1).status_code == 409   # aún no hay pregunta
 
     assert docente.post("/api/docente/tema/redes").status_code == 200
@@ -622,12 +624,78 @@ def test_encuesta_cerrada_no_da_solucion_ni_categoria(mixto):
     assert [o["n"] for o in r["opciones"]] == [0, 1, 0, 0]
 
 
-def test_la_encuesta_se_cierra_como_las_demas(mixto):
+def test_la_encuesta_pasa_sola_a_la_siguiente_cuando_han_respondido_todos(mixto):
     docente, alumno = mixto
     estado(alumno, token=TOKEN_A)                    # conectado
     responde(alumno, TOKEN_A, 0)                     # vota el único conectado
     e = docente.get("/api/docente/estado").json()
-    assert e["fase"] == "cerrada" and e["motivo_cierre"] == "todos"
+    assert e["fase"] == "abierta" and e["indice"] == 1       # ya está en la pregunta siguiente (el test)
+    assert e["pregunta"]["tipo"] == "una_opcion" and e["n_respuestas"] == 0
+    # la respuesta de la encuesta no se pierde: sale en el resumen
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+    enc = estado(alumno)["resumen"]["preguntas"][0]
+    assert [o["n"] for o in enc["opciones"]] == [1, 0, 0, 0]
+
+
+def test_las_preguntas_de_test_siguen_cerrandose_sin_avanzar(mixto):
+    docente, alumno = mixto
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")           # pregunta 2: test
+    estado(alumno, token=TOKEN_A)
+    responde(alumno, TOKEN_A, 1)
+    e = docente.get("/api/docente/estado").json()
+    assert e["fase"] == "cerrada" and e["indice"] == 1 and e["motivo_cierre"] == "todos"
+
+
+def test_la_ultima_encuesta_pasa_al_resumen(mixto):
+    docente, alumno = mixto
+    for _ in range(2):
+        docente.post("/api/docente/cerrar")
+        docente.post("/api/docente/siguiente")       # llegamos a la última pregunta: una encuesta
+    estado(alumno, token=TOKEN_A)
+    responde(alumno, TOKEN_A, "nose")
+    e = docente.get("/api/docente/estado").json()
+    assert e["fase"] == "resumen"
+    assert [o["n"] for o in e["resumen"]["preguntas"][2]["opciones"]] == [0, 0, 1]
+
+
+def test_la_encuesta_no_avanza_si_se_cierra_por_tiempo_o_a_mano(tmp_path, reloj):
+    d = escribe(tmp_path, """
+temas:
+  t:
+    preguntas:
+      - {tipo: encuesta, texto: "a", opciones: [x, y], tiempo: 10}
+      - {tipo: encuesta, texto: "b", opciones: [x, y]}
+      - {texto: "c", opciones: [x, y], correcta: 1}
+""")
+    app = crear_app(cargar(d), d, 8000, reloj=reloj)
+    with TestClient(app, client=("127.0.0.1", 5000)) as docente, \
+         TestClient(app, client=("192.168.1.50", 5000)) as alumno:
+        inicia(docente, "t")
+        conecta(alumno, TOKEN_A, TOKEN_B)            # dos conectados: no votan todos
+        responde(alumno, TOKEN_A, 0)
+        reloj.t += 11                                # se agota el tiempo
+        e = docente.get("/api/docente/estado").json()
+        assert e["fase"] == "cerrada" and e["indice"] == 0 and e["motivo_cierre"] == "tiempo"
+        docente.post("/api/docente/siguiente")       # encuesta b
+        responde(alumno, TOKEN_A, 1)
+        docente.post("/api/docente/cerrar")          # el docente la cierra a mano
+        e = docente.get("/api/docente/estado").json()
+        assert e["fase"] == "cerrada" and e["indice"] == 1 and e["motivo_cierre"] == "docente"
+
+
+def test_cerrar_justo_despues_de_que_respondan_todos_no_cierra_la_pregunta_nueva(mixto):
+    """Una acción del docente no debe caer sobre la pregunta que se acaba de abrir sola."""
+    docente, alumno = mixto
+    estado(alumno, token=TOKEN_A)
+    sesion = docente.app.state.sesion
+    sesion.respuestas.setdefault(sesion.pregunta.id, {})[TOKEN_A] = 0   # responde, sin que nadie consulte aún
+    docente.post("/api/docente/cerrar")              # pulsa «cerrar» antes del siguiente sondeo
+    e = docente.get("/api/docente/estado").json()
+    assert e["fase"] == "cerrada" and e["indice"] == 0      # cierra la encuesta, sin saltar a la siguiente
 
 
 def test_las_encuestas_no_cuentan_en_el_resumen_global(mixto):
@@ -652,9 +720,11 @@ def test_las_encuestas_no_cuentan_en_el_resumen_global(mixto):
     e1, test, e2 = r["preguntas"]
     assert [e1["tipo"], test["tipo"], e2["tipo"]] == ["encuesta", "una_opcion", "encuesta"]
     assert e1["categorias"] == [] and e1["total"] == 2
-    assert [o["n"] for o in e1["reparto"]] == [0, 0, 0, 2] and e1["con_nose"] is False
-    assert "reparto" not in test
-    assert [o["n"] for o in e2["reparto"]] == [0, 0, 1] and e2["con_nose"] is True   # sí, no, «no lo sé»
+    assert [o["n"] for o in e1["opciones"]] == [0, 0, 0, 2]
+    assert [o["texto"] for o in e1["opciones"]][-1] == "Lo uso con soltura"
+    assert [o["n"] for o in e2["opciones"]] == [0, 0, 1] and e2["opciones"][-1]["nose"] is True   # sí, no, «no lo sé»
+    assert [o["n"] for o in test["opciones"]] == [1, 1, 0]            # enlace, red, «no lo sé»
+    assert [o["correcta"] for o in test["opciones"]] == [False, True, False]
 
 
 def test_resumen_con_solo_encuestas(tmp_path, reloj):
@@ -846,11 +916,215 @@ def test_resumen_con_parcial_y_encuesta_multiple(multi):
     assert g == {"acierto": 2, "parcial": 1, "error": 1, "nose": 0} and r["global"]["total"] == 4
     multi_q, enc, _ = r["preguntas"]
     assert [c["clave"] for c in multi_q["categorias"]] == ["acierto", "parcial", "error", "nose"]
-    assert enc["multiple"] is True and [o["n"] for o in enc["reparto"]] == [1, 1, 0, 0]
+    assert [o["n"] for o in enc["opciones"]] == [1, 1, 0, 0]
 
 
 def test_el_ejemplo_incluye_varias_opciones():
     temas = cargar(PREGUNTAS)
     assert [p.tipo for p in temas["multiopcion"].preguntas] == ["multiopcion", "multiopcion"]
     assert any(p.tipo == "encuesta" and p.con_varias for p in temas["experiencia"].preguntas)
+
+
+# ---------- modo remoto (túnel de Cloudflare): código de sala y clave del docente ----------
+URL_PUBLICA = "https://preguntas.ejemplo.online"
+CLAVE = "clave-del-docente"
+TOKEN_D = "d" * 16
+
+
+@pytest.fixture
+def remoto(reloj):
+    """En modo remoto TODAS las peticiones llegan desde 127.0.0.1 (el túnel corre en el mismo equipo)."""
+    app = crear_app(cargar(PREGUNTAS), PREGUNTAS, 8000, reloj=reloj, url_publica=URL_PUBLICA, clave=CLAVE)
+    with TestClient(app, client=("127.0.0.1", 5000)) as docente, \
+         TestClient(app, client=("127.0.0.1", 5001)) as alumno:
+        yield docente, alumno, app.state.sesion
+
+
+def entra(alumno, token, codigo):
+    return alumno.post("/api/entrar", json={"token": token, "codigo": codigo})
+
+
+def login(docente, clave=CLAVE, **cabeceras):
+    return docente.post("/api/docente/entrar", json={"clave": clave}, headers=cabeceras)
+
+
+def test_sin_codigo_el_alumno_no_ve_nada_ni_vota(remoto):
+    docente, alumno, sesion = remoto
+    login(docente)
+    inicia(docente, "redes")
+    r = alumno.get("/api/estado", params={"token": TOKEN_A})
+    assert r.status_code == 401 and r.json() == {"detail": "codigo"}
+    assert alumno.get("/api/estado").status_code == 401                 # ni siquiera sin token
+    assert responde(alumno, TOKEN_A, 1).status_code == 401
+    assert sesion.conectados() == 0                                     # no cuenta como conectado
+    assert docente.get("/api/docente/estado").json()["n_respuestas"] == 0
+
+
+def test_con_el_codigo_el_alumno_entra_y_participa(remoto):
+    docente, alumno, sesion = remoto
+    login(docente)
+    inicia(docente, "redes")
+    assert entra(alumno, TOKEN_A, sesion.codigo).status_code == 200
+    assert estado(alumno, token=TOKEN_A)["fase"] == "abierta"
+    assert responde(alumno, TOKEN_A, 1).status_code == 200
+    assert sesion.conectados() == 1
+    assert alumno.get("/api/estado", params={"token": TOKEN_B}).status_code == 401   # otro token, sin entrar
+
+
+def test_codigo_incorrecto(remoto):
+    docente, alumno, sesion = remoto
+    r = entra(alumno, TOKEN_A, "XXXXXX")
+    assert r.status_code == 403 and r.json()["detail"] == "Código incorrecto"
+    assert alumno.get("/api/estado", params={"token": TOKEN_A}).status_code == 401
+    assert alumno.post("/api/entrar", json={"token": "corto", "codigo": sesion.codigo}).status_code == 422
+
+
+def test_el_codigo_admite_minusculas_espacios_y_guiones(remoto):
+    docente, alumno, sesion = remoto
+    c = sesion.codigo.lower()
+    assert entra(alumno, TOKEN_A, f" {c[:3]}-{c[3:]} ").status_code == 200
+    assert normaliza_codigo(" ab-c 2") == "ABC2"
+
+
+def test_el_codigo_es_de_6_caracteres_sin_ambiguedades(remoto):
+    _, _, sesion = remoto
+    assert len(sesion.codigo) == 6 and not set(sesion.codigo) & set("01OIL")
+
+
+def test_cierre_por_todos_ha_votado_solo_cuenta_a_los_admitidos(remoto):
+    docente, alumno, sesion = remoto
+    login(docente)
+    inicia(docente, "redes")
+    entra(alumno, TOKEN_A, sesion.codigo)
+    estado(alumno, token=TOKEN_A)
+    alumno.get("/api/estado", params={"token": TOKEN_C})                # intruso: 401, no es «conectado»
+    responde(alumno, TOKEN_A, 1)                                        # el único admitido vota
+    e = docente.get("/api/docente/estado").json()
+    assert e["fase"] == "cerrada" and e["motivo_cierre"] == "todos"
+
+
+def test_demasiados_codigos_erroneos_bloquea_las_entradas_nuevas(remoto, reloj):
+    docente, alumno, sesion = remoto
+    entra(alumno, TOKEN_B, sesion.codigo)                               # ya admitido
+    for i in range(120):
+        assert entra(alumno, TOKEN_A, "XXXXXX").status_code == 403
+    assert entra(alumno, TOKEN_A, "XXXXXX").status_code == 429
+    assert entra(alumno, TOKEN_A, sesion.codigo).status_code == 429     # ni con el código bueno
+    assert alumno.get("/api/estado", params={"token": TOKEN_B}).status_code == 200   # el admitido sigue
+    reloj.t += 61
+    assert entra(alumno, TOKEN_A, sesion.codigo).status_code == 200
+
+
+def test_la_misma_ip_no_penaliza_a_los_alumnos_que_aciertan(remoto):
+    docente, alumno, sesion = remoto
+    for i in range(30):                                                  # un aula entera tecleando
+        assert entra(alumno, f"alumno{i:02d}" * 2, sesion.codigo).status_code == 200
+
+
+def test_panel_del_docente_pide_clave_aunque_llegue_desde_localhost(remoto):
+    docente, alumno, sesion = remoto
+    assert docente.get("/docente").status_code == 200                    # la página no tiene secretos
+    for ruta in ("/api/docente/estado", "/api/docente/qr.svg"):
+        r = docente.get(ruta)
+        assert r.status_code == 401 and r.json()["detail"] == "clave"
+    assert docente.post("/api/docente/tema/redes").status_code == 401
+    assert docente.post("/api/docente/cerrar").status_code == 401
+    r = login(docente, "otra")
+    assert r.status_code == 403 and r.json()["detail"] == "Clave incorrecta"
+    assert docente.get("/api/docente/estado").status_code == 401
+    r = login(docente)
+    assert r.status_code == 200
+    assert "httponly" in r.headers["set-cookie"].lower() and "samesite=strict" in r.headers["set-cookie"].lower()
+    assert docente.get("/api/docente/estado").status_code == 200
+    assert docente.post("/api/docente/tema/redes").status_code == 200
+    # el alumno (otra «sesión» de navegador) sigue sin acceso
+    assert alumno.get("/api/docente/estado").status_code == 401
+
+
+def test_la_cookie_del_docente_caduca(remoto, reloj):
+    docente, _, _ = remoto
+    login(docente)
+    assert docente.get("/api/docente/estado").status_code == 200
+    reloj.t += 13 * 3600
+    assert docente.get("/api/docente/estado").status_code == 401
+
+
+def test_la_cookie_es_secure_solo_si_llega_por_el_tunel(remoto):
+    docente, alumno, _ = remoto
+    assert "secure" not in login(docente).headers["set-cookie"].lower()          # http://localhost
+    assert "secure" in login(alumno, **{"Cf-Connecting-Ip": "203.0.113.9"}).headers["set-cookie"].lower()
+
+
+def test_limite_de_intentos_de_clave_por_origen(remoto):
+    docente, alumno, _ = remoto
+    for _ in range(10):
+        assert login(alumno, "mala", **{"Cf-Connecting-Ip": "203.0.113.9"}).status_code == 403
+    assert login(alumno, CLAVE, **{"Cf-Connecting-Ip": "203.0.113.9"}).status_code == 429    # bloqueado
+    assert login(docente, "mala").status_code == 403                    # el docente en local tiene su propio cubo
+    assert login(docente).status_code == 200
+    assert login(alumno, CLAVE, **{"Cf-Connecting-Ip": "198.51.100.7"}).status_code == 200   # otro origen
+
+
+def test_el_docente_ve_codigo_y_url_publica_y_el_qr_apunta_a_ellos(remoto):
+    docente, _, sesion = remoto
+    login(docente)
+    e = docente.get("/api/docente/estado").json()
+    assert e["codigo"] == sesion.codigo and e["url_alumnos"] == URL_PUBLICA + "/"
+    r = docente.get("/api/docente/qr.svg")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("image/svg+xml")
+    assert r.text == qr_svg(f"{URL_PUBLICA}/?c={sesion.codigo}") and "<svg" in r.text
+
+
+def test_cabeceras_de_seguridad(remoto):
+    docente, _, _ = remoto
+    r = docente.get("/docente")
+    assert r.headers["x-content-type-options"] == "nosniff" and r.headers["referrer-policy"] == "no-referrer"
+
+
+def test_el_modo_local_no_pide_codigo_y_no_cambia(cliente):
+    docente, alumno = cliente
+    assert docente.get("/api/docente/estado").json()["codigo"] is None
+    assert estado(alumno, token=TOKEN_A)["fase"] == "inicio"            # sin código, como siempre
+    assert alumno.post("/api/entrar", json={"token": TOKEN_A, "codigo": ""}).status_code == 200
+    assert docente.get("/api/docente/qr.svg").status_code == 404
+    assert alumno.get("/api/docente/estado").status_code == 403         # solo desde el equipo, como siempre
+
+
+def test_clave_opcional_en_modo_local(reloj):
+    app = crear_app(cargar(PREGUNTAS), PREGUNTAS, 8000, reloj=reloj, clave="x")
+    with TestClient(app, client=("127.0.0.1", 5000)) as docente, \
+         TestClient(app, client=("192.168.1.50", 5000)) as otro:
+        assert docente.get("/api/docente/estado").status_code == 401
+        assert login(docente, "x").status_code == 200
+        assert docente.get("/api/docente/estado").status_code == 200
+        assert login(otro, "x").status_code == 403                      # además sigue siendo solo local
+
+
+def test_modo_remoto_sin_clave_no_arranca(monkeypatch, capsys):
+    with pytest.raises(ValueError, match="clave"):
+        crear_app(cargar(PREGUNTAS), PREGUNTAS, 8000, url_publica=URL_PUBLICA)
+    monkeypatch.delenv("PULSO_CLAVE", raising=False)
+    assert main(["--preguntas", str(PREGUNTAS), "--url-publica", URL_PUBLICA]) == 1
+    assert "necesita una clave" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("url", ["preguntas.ejemplo.online", "ftp://x.online", "https://x.online/ruta", "https://x.online/?a=1", "https://"])
+def test_url_publica_invalida(monkeypatch, capsys, url):
+    monkeypatch.setenv("PULSO_CLAVE", "x")
+    assert main(["--preguntas", str(PREGUNTAS), "--url-publica", url]) == 1
+    assert "--url-publica" in capsys.readouterr().err
+
+
+# ---------- páginas abiertas durante una actualización ----------
+def test_el_estado_lleva_el_identificador_de_arranque(cliente, reloj):
+    docente, alumno = cliente
+    a = estado(alumno)["arranque"]
+    assert a and docente.get("/api/docente/estado").json()["arranque"] == a
+    inicia(docente, "redes")
+    assert estado(alumno)["arranque"] == a                 # no cambia dentro de una misma ejecución
+    docente.post("/api/docente/inicio")
+    assert estado(alumno)["arranque"] == a
+    otra = crear_app(cargar(PREGUNTAS), PREGUNTAS, 8000, reloj=reloj)
+    with TestClient(otra, client=("192.168.1.50", 5000)) as otro_alumno:
+        assert estado(otro_alumno)["arranque"] != a        # un servidor nuevo tiene otro
 

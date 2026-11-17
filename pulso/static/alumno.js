@@ -22,6 +22,42 @@ const token = obtenerToken();
 const app = document.getElementById('app');
 let refrescar;
 
+// Modo remoto: el QR trae el código en la dirección (?c=…). Se usa una vez y se borra de la barra.
+let codigoDelQR = new URLSearchParams(location.search).get('c');
+if (codigoDelQR) history.replaceState(null, '', location.pathname);
+
+async function entrar(codigo) {
+  try {
+    await api('/api/entrar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, codigo }),
+    });
+  } catch (e) { return e.message; }
+  refrescar();
+  return null;
+}
+
+function pedirCodigo(mensaje) {
+  const form = formularioAcceso({
+    titulo: 'código de la sesión',
+    ayuda: 'Lo verás en la pantalla del aula. También puedes leer el QR.',
+    clase: 'codigo',
+    enviar: codigo => entrar(codigo),
+  });
+  if (mensaje) form.querySelector('.estado.mal').textContent = mensaje;
+  app.replaceChildren(form);
+}
+
+// El servidor pide el código de sala (modo remoto): primero se prueba el del QR, si lo hay.
+function sinAcceso() {
+  if (!codigoDelQR) { pedirCodigo(); return; }
+  const c = codigoDelQR;
+  codigoDelQR = null;
+  app.replaceChildren(el('p', { class: 'espera' }, 'entrando…'));
+  entrar(c).then(error => { if (error) pedirCodigo(error); });
+}
+
 async function enviar(valor) {
   try {
     await api('/api/responder', {
@@ -204,4 +240,4 @@ function render(d) {
   app.replaceChildren(...contenido.flat().filter(Boolean));
 }
 
-refrescar = sondear(() => '/api/estado?token=' + encodeURIComponent(token), render);
+refrescar = sondear(() => '/api/estado?token=' + encodeURIComponent(token), render, 1000, sinAcceso);

@@ -116,6 +116,21 @@ class PreguntaDeOpciones(PreguntaBase):
             return r
         raise ValueError("respuesta no válida")
 
+    def resumen_opciones(self, r: dict) -> list[dict]:
+        """Opciones con su número y porcentaje de respuestas (para el resumen final).
+
+        `r` es lo que devuelve `resultados()`. Si se pueden marcar varias opciones, los
+        porcentajes no suman 100 %. «No lo sé» va al final, si se ofrece.
+        """
+        buenas = set(r["correctas"])
+        filas = [
+            {**o.publica(), **r["opciones"][i], "correcta": i in buenas}
+            for i, o in enumerate(self.opciones)
+        ]
+        if r["nose"] is not None:
+            filas.append({"texto": ETIQUETA_NOSE, "imagen": None, **r["nose"], "correcta": False, "nose": True})
+        return filas
+
     def _reparto(self, respuestas: list[Any]) -> dict:
         """Número y porcentaje de respuestas de cada opción y de «no lo sé».
 

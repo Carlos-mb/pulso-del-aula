@@ -32,6 +32,7 @@ class Tema:
     id: str
     titulo: str
     tiempo: int = 0  # segundos por defecto de sus preguntas; 0 = sin límite
+    identificacion: bool = False  # los alumnos eligen un alias y hay ranking
     preguntas: list[PreguntaBase] = field(default_factory=list)
 
     def tiempo_de(self, pregunta: PreguntaBase) -> int:
@@ -103,7 +104,13 @@ def cargar(directorio: Path) -> dict[str, Tema]:
                     f"{fichero.name}, tema '{tid}': 'tiempo' debe ser un número entero "
                     "de segundos (0 = sin límite)"
                 )
-            tema = Tema(id=tid, titulo=str(cuerpo.get("titulo", tid)), tiempo=tiempo)
+            identificacion = cuerpo.get("identificacion", False)
+            if not isinstance(identificacion, bool):
+                raise ErrorBanco(
+                    f"{fichero.name}, tema '{tid}': 'identificacion' debe ser true o false"
+                )
+            tema = Tema(id=tid, titulo=str(cuerpo.get("titulo", tid)), tiempo=tiempo,
+                        identificacion=identificacion)
             ids: set[str] = set()
             for n, raw in enumerate(cuerpo["preguntas"], start=1):
                 p = _pregunta(raw, tid, n, fichero)

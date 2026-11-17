@@ -67,7 +67,8 @@ function pantallaInicio(d) {
       el('button', { class: 'tema', onclick: () => elegirTema(t.id) },
         el('span', { class: 'letra' }, String(i + 1)),
         el('span', { class: 'tema-titulo' }, t.titulo),
-        el('span', { class: 'tema-n' }, `${t.n_preguntas} preguntas${formatoDuracion(t.tiempo)}`)))),
+        el('span', { class: 'tema-n' },
+          `${t.n_preguntas} preguntas${formatoDuracion(t.tiempo)}${t.identificacion ? ' · con ranking' : ''}`)))),
   ];
 }
 
@@ -143,6 +144,15 @@ function tile(c, total) {
     el('div', { class: 'tile-n' }, `${c.n} de ${total}`));
 }
 
+// Ranking: solo alias y puntos, de más a menos (sin posiciones, así que no hay que desempatar).
+function tablaRanking(filas, titulo) {
+  return el('section', { class: 'ranking' },
+    el('p', { class: 'eyebrow' }, titulo),
+    el('ol', { class: 'ranking-lista' }, filas.map(f =>
+      el('li', {}, el('span', { class: 'ranking-alias' }, f.alias),
+        el('span', { class: 'ranking-puntos' }, String(f.puntos))))));
+}
+
 function pantallaResultados(d) {
   const p = d.pregunta, r = d.resultados;
   return [
@@ -159,6 +169,7 @@ function pantallaResultados(d) {
     p.multiple && p.tipo !== 'encuesta'
       && el('p', { class: 'contador' }, 'cada barra es el porcentaje de alumnos que marcó esa opción'),
     r.explicacion && el('div', { class: 'explicacion md' }, formato(r.explicacion)),
+    d.ranking && d.ranking.length > 0 && tablaRanking(d.ranking, 'ranking'),
   ];
 }
 
@@ -205,6 +216,7 @@ function pantallaResumen(d) {
     el('h1', { class: 'enunciado compacto' }, 'Resumen'),
     r.global.categorias.length > 0
       && el('div', { class: 'resumen' }, r.global.categorias.map(c => tile(c, r.global.total))),
+    r.ranking && r.ranking.length > 0 && tablaRanking(r.ranking, 'ranking final'),
     el('ol', { class: 'tabla-resumen' }, r.preguntas.map(filaResumen)),
   ];
 }

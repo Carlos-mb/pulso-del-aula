@@ -37,6 +37,13 @@ SEGUNDOS_PRESENCIA = 10.0
 MAX_ADMITIDOS = 1000
 FALLOS_CODIGO_POR_MINUTO = 120
 
+# Puntuación (solo en los tests con identificación): 100 por pregunta acertada, o la parte
+# proporcional si es de varias opciones, y un extra para los primeros en acertar del todo.
+PUNTOS_ACIERTO = 100
+BONUS_ORDEN = (10, 8, 5, 2, 1)
+MAX_ALIAS = 20
+TAM_RANKING = 5   # alumnos que se muestran entre pregunta y pregunta
+
 
 class EstadoInvalido(Exception):
     """La acción no es posible en la fase actual."""
@@ -76,6 +83,8 @@ class Sesion:
         self.limite: float | None = None  # instante en que se agota el tiempo
         self.duracion = 0
         self.cierre_auto = True  # ¿se cierra al votar todos los conectados?
+        # Alias de los alumnos (solo en los tests con identificación): {token: alias}
+        self.alias: dict[str, str] = {}
 
     def elegir_tema(self, tema_id: str) -> None:
         if tema_id not in self.temas:
@@ -150,6 +159,72 @@ class Sesion:
         if self.codigo is not None and (token is None or token not in self.admitidos):
             raise NoAdmitido
 
+    # ---------- identificación (alias) ----------
+    @property
+    def identificacion(self) -> bool:
+        return self.tema is not None and self.tema.identificacion
+
+    def poner_alias(self, token: str, alias: str) -> None:
+        """Registra el alias del alumno. No se admiten repetidos (sin distinguir mayúsculas)."""
+        self.exige_admitido(token)
+        if not self.identificacion:
+            raise EstadoInvalido("Este test no pide alias")
+        limpio = " ".join(alias.split())
+        if not limpio:
+            raise ValueError("Escribe un alias")
+        if len(limpio) > MAX_ALIAS:
+            raise ValueError(f"El alias admite como máximo {MAX_ALIAS} caracteres")
+        if not limpio.isprintable():
+            raise ValueError("El alias tiene caracteres no válidos")
+        clave = limpio.casefold()
+        actual = self.alias.get(token)
+        if actual is not None:
+            if actual.casefold() == clave:   # reenvío del mismo formulario
+                return
+            raise EstadoInvalido("Ya tienes un alias")
+        if any(a.casefold() == clave for a in self.alias.values()):
+            raise ValueError("Ese alias ya está en uso: elige otro")
+        if len(self.alias) >= MAX_ADMITIDOS:
+            raise EstadoInvalido("La sala está llena")
+        self.alias[token] = limpio
+
+    def _puntos_pregunta(self, p: PreguntaBase) -> dict[str, int]:
+        """Puntos de cada alumno en una pregunta (las encuestas no puntúan).
+
+        100 por acierto, o la parte proporcional en las de varias opciones. Los cinco primeros
+        en acertar del todo suman además 10, 8, 5, 2 y 1. El orden es el del último envío de cada
+        alumno (`responder` coloca cada respuesta al final): quien cambia su respuesta pasa al final.
+        """
+        if not p.puntua:
+            return {}
+        puntos: dict[str, int] = {}
+        aciertos = 0
+        for token, r in self.respuestas.get(p.id, {}).items():
+            categoria, nota = p.evaluar(r)
+            pts = round(PUNTOS_ACIERTO * nota)
+            if categoria == "acierto":
+                if aciertos < len(BONUS_ORDEN):
+                    pts += BONUS_ORDEN[aciertos]
+                aciertos += 1
+            puntos[token] = pts
+        return puntos
+
+    def ranking(self, hasta: int) -> list[dict]:
+        """Puntos acumulados de todos los alumnos con alias hasta la pregunta `hasta` (incluida).
+
+        De más a menos puntos. Sin posiciones, así que los empates no se resuelven: van juntos,
+        por orden alfabético.
+        """
+        assert self.tema is not None
+        total = {t: 0 for t in self.alias}
+        for p in self.tema.preguntas[: hasta + 1]:
+            for t, pts in self._puntos_pregunta(p).items():
+                if t in total:
+                    total[t] += pts
+        filas = [{"alias": self.alias[t], "puntos": n} for t, n in total.items()]
+        filas.sort(key=lambda f: (-f["puntos"], f["alias"].casefold()))
+        return filas
+
     # ---------- presencia ----------
     def visto(self, token: str | None) -> None:
         """Anota que este navegador sigue conectado."""
@@ -171,8 +246,12 @@ class Sesion:
         self._tic()
         if self.fase != "abierta":
             raise EstadoInvalido("La votación no está abierta")
+        if self.identificacion and token not in self.alias:
+            raise EstadoInvalido("Elige un alias antes de responder")
         valida = self.pregunta.validar_respuesta(respuesta)
-        self.respuestas.setdefault(self.pregunta.id, {})[token] = valida
+        resp = self.respuestas.setdefault(self.pregunta.id, {})
+        resp.pop(token, None)   # si la cambia, cuenta como enviada ahora (orden de llegada)
+        resp[token] = valida
         self._tic()  # puede que este voto sea el último que faltaba
 
     # ---------- internos ----------
@@ -259,7 +338,7 @@ class Sesion:
         self._ir_a(i)
 
     # ---------- lo que se envía a los clientes ----------
-    def resumen(self) -> dict:
+    def resumen(self, con_ranking: bool = False) -> dict:
         """Aciertos/errores/no lo sé de cada pregunta y del conjunto, y el reparto de respuestas.
 
         Cada pregunta lleva sus opciones con el número y el porcentaje de respuestas de cada una.
@@ -283,8 +362,11 @@ class Sesion:
             g["pct"] = round(100 * g["n"] / total, 1) if total else 0.0
         orden = {k: i for i, k in enumerate(("acierto", "parcial", "error", "nose"))}
         categorias = sorted(globales.values(), key=lambda g: orden.get(g["clave"], len(orden)))
-        return {"preguntas": filas,
-                "global": {"total": total, "categorias": categorias}}
+        datos = {"preguntas": filas,
+                 "global": {"total": total, "categorias": categorias}}
+        if con_ranking and self.identificacion:
+            datos["ranking"] = self.ranking(len(self.tema.preguntas) - 1)
+        return datos
 
     def vista(self, token: str | None = None, docente: bool = False) -> dict:
         self._tic()
@@ -292,8 +374,12 @@ class Sesion:
         if self.tema is not None:
             v["tema"] = {"id": self.tema.id, "titulo": self.tema.titulo}
             v["total"] = len(self.tema.preguntas)
+            if self.identificacion:
+                v["identificacion"] = True
+                if token is not None and token in self.alias:
+                    v["alias"] = self.alias[token]
             if self.fase == "resumen":
-                v["resumen"] = self.resumen()
+                v["resumen"] = self.resumen(con_ranking=docente)
             elif self.fase != "sala":
                 p = self.pregunta
                 resp = self._resp()
@@ -308,13 +394,16 @@ class Sesion:
                 if self.fase == "cerrada":
                     v["resultados"] = p.resultados(list(resp.values()))
                     v["motivo_cierre"] = self.cerradas.get(p.id, "docente")
+                    if docente and self.identificacion and p.puntua:
+                        v["ranking"] = self.ranking(self.indice)[:TAM_RANKING]
                 if token is not None and token in resp:
                     v["mi_respuesta"] = resp[token]
                     if self.fase == "cerrada" and p.puntua:
                         v["mi_categoria"] = p.evaluar(resp[token])[0]
         if docente:
             v["temas"] = [
-                {"id": t.id, "titulo": t.titulo, "n_preguntas": len(t.preguntas), "tiempo": t.tiempo}
+                {"id": t.id, "titulo": t.titulo, "n_preguntas": len(t.preguntas), "tiempo": t.tiempo,
+                 "identificacion": t.identificacion}
                 for t in self.temas.values()
             ]
             v["url_alumnos"] = self.url_alumnos

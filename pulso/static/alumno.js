@@ -58,6 +58,30 @@ function sinAcceso() {
   entrar(c).then(error => { if (error) pedirCodigo(error); });
 }
 
+// Test con identificación: el alumno elige un alias (único) que saldrá en el ranking.
+async function ponerAlias(alias) {
+  try {
+    await api('/api/alias', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, alias }),
+    });
+  } catch (e) { return e.message; }
+  refrescar();
+  return null;
+}
+
+function pedirAlias() {
+  // La página se redibuja cuando llegan datos nuevos: no se pisa el formulario mientras se escribe.
+  if (app.querySelector('input.alias')) return;
+  app.replaceChildren(formularioAcceso({
+    titulo: 'elige tu alias',
+    ayuda: 'Es el nombre que verán todos en el ranking. No puede repetirse.',
+    clase: 'alias', maximo: 20, boton: 'Continuar',
+    enviar: ponerAlias,
+  }));
+}
+
 async function enviar(valor) {
   try {
     await api('/api/responder', {
@@ -223,6 +247,7 @@ function vistaCerrada(d) {
 }
 
 function render(d) {
+  if (d.identificacion && !d.alias) { pedirAlias(); return; }
   let contenido;
   if (d.fase === 'abierta') contenido = vistaAbierta(d);
   else if (d.fase === 'cerrada') contenido = vistaCerrada(d);

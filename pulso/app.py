@@ -43,6 +43,11 @@ class Entrada(BaseModel):
     codigo: str = Field(max_length=32)
 
 
+class AliasEntrada(BaseModel):
+    token: str = Field(min_length=8, max_length=64)
+    alias: str = Field(max_length=200)
+
+
 class Clave(BaseModel):
     clave: str = Field(max_length=200)
 
@@ -141,6 +146,11 @@ def crear_app(
     @app.post("/api/entrar")
     async def entrar(datos: Entrada) -> dict:
         sesion.admitir(datos.token, datos.codigo)
+        return {"ok": True}
+
+    @app.post("/api/alias")
+    async def poner_alias(datos: AliasEntrada) -> dict:
+        sesion.poner_alias(datos.token, datos.alias)
         return {"ok": True}
 
     @app.post("/api/responder")

@@ -135,15 +135,15 @@ function tituloEnunciado(texto, clases) {
   return el('div', { class: 'enunciado md ' + (clases || ''), role: 'heading', 'aria-level': '1' }, formato(texto));
 }
 
-// Formulario de un solo campo (código de sala del alumno, clave del docente).
+// Formulario de un solo campo (código de sala del alumno, clave del docente, alias).
 // `enviar(valor)` devuelve null si todo fue bien o el texto del error.
-function formularioAcceso({ titulo, ayuda, tipo, clase, enviar }) {
+function formularioAcceso({ titulo, ayuda, tipo, clase, maximo, boton: etiqueta, enviar }) {
   const campo = el('input', {
-    class: 'campo-acceso ' + (clase || ''), type: tipo || 'text', maxlength: 200,
+    class: 'campo-acceso ' + (clase || ''), type: tipo || 'text', maxlength: maximo || 200,
     autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', 'aria-label': titulo,
   });
   const aviso = el('p', { class: 'estado mal', role: 'alert' });
-  const boton = el('button', { class: 'enviar', type: 'submit' }, 'Entrar');
+  const boton = el('button', { class: 'enviar', type: 'submit' }, etiqueta || 'Entrar');
   const form = el('form', { class: 'acceso' },
     el('p', { class: 'eyebrow centrado' }, titulo), campo, boton, aviso,
     ayuda && el('p', { class: 'estado' }, ayuda));

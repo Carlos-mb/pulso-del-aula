@@ -22,6 +22,10 @@
 #   lista (`correcta: [1, 3]`). La puntuación va de 0 a 1: correctas marcadas menos incorrectas
 #   marcadas, entre el total de correctas (mínimo 0). Resultado: acierto, parcial, error o «no lo sé».
 #   En una encuesta, `multiple: true` permite marcar varias. Ver los temas 'multiopcion' y 'experiencia'.
+# - Con `identificacion: true` en el tema, cada alumno elige un alias al entrar y hay ranking:
+#   100 puntos por pregunta acertada (la parte proporcional en `multiopcion`) y un extra de
+#   10, 8, 5, 2 y 1 para los cinco primeros en acertar del todo. El ranking de los 5 primeros
+#   sale entre pregunta y pregunta, y el completo en el resumen. Ver el tema 'multiopcion'.
 # - Si una opción puede confundirse con un valor YAML (Sí, No, On, Off...),
 #   entrecomíllala.
 
@@ -147,6 +151,7 @@ temas:
 
   multiopcion:
     titulo: "Varias respuestas correctas (prueba)"
+    identificacion: true            # alias de los alumnos y ranking
     preguntas:
       - tipo: multiopcion
         texto: "¿Cuáles de estas direcciones son IPv4 **privadas**?"

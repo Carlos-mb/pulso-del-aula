@@ -110,6 +110,30 @@ Opciones: `--preguntas CARPETA` (por defecto `./preguntas`), `--puerto N`, `--ho
    de alumnos que eligió cada una** (la correcta, con ✓, y «no lo sé» aparte). Las encuestas solo muestran ese
    reparto y no cuentan en el conjunto.
 
+### Identificación y ranking (opcional)
+
+Un tema con `identificacion: true` deja de ser anónimo: cada alumno elige un **alias** al entrar y hay **ranking**.
+
+```yaml
+temas:
+  redes:
+    titulo: "Redes básicas"
+    identificacion: true
+```
+
+- **Alias:** hasta 20 caracteres, **sin repetidos** (no distingue mayúsculas ni espacios de más). No se puede
+  cambiar una vez elegido, ni responder sin él. Si el alumno recarga la página o pierde la conexión, **conserva**
+  su alias y sus puntos (el navegador guarda el mismo token). Se pierde si borra los datos del navegador, usa otro
+  dispositivo o se reinicia el servidor. Al volver a la lista de temas se olvidan todos los alias.
+- **Puntos por pregunta:** 100 por acertar (en `multiopcion`, la parte proporcional de la puntuación) y un extra
+  de **10, 8, 5, 2 y 1** para los cinco primeros en **acertar del todo**. Las encuestas no puntúan.
+- **Orden de llegada:** cuenta el momento del **último envío**. Si un alumno cambia su respuesta, pasa al final
+  de la cola; si acertó y luego la cambia a una incorrecta, pierde el acierto y el extra.
+- **Ranking:** solo alias y puntos, de más a menos y **sin posiciones**, así que no hay desempate (los empates
+  van juntos, por orden alfabético). Entre pregunta y pregunta se proyectan los **5 primeros** (o menos, si hay menos
+  participantes), acumulando hasta esa pregunta; con un empate en el quinto puesto se corta ahí. El **resumen** final
+  muestra el ranking completo. Los alumnos no reciben el ranking en su pantalla: solo lo ve el docente.
+
 **Conectados:** cuenta los navegadores que han consultado al servidor en los últimos 10 segundos
 (cada página lo hace cada segundo), identificados solo por su token aleatorio y sin guardar nada más.
 Si un alumno cierra la pestaña o pierde la conexión, deja de contar a los 10 s. Un mismo navegador
@@ -212,7 +236,7 @@ antes de tener el dominio, un túnel temporal da una dirección `https://….try
 - **Clave del docente**: se compara en tiempo constante y se limita a 10 fallos por minuto para cada origen
   (la IP real que indica Cloudflare en `Cf-Connecting-Ip`; el propio equipo del docente cuenta aparte).
   La cookie es `HttpOnly` y `SameSite=Strict` (y `Secure` cuando llega por el túnel).
-- Los alumnos siguen siendo anónimos: se guarda un token aleatorio y nada más; no se guarda la IP.
+- Los alumnos siguen siendo anónimos (salvo el alias, en los temas con identificación): se guarda un token aleatorio y nada más; no se guarda la IP.
 - Las consultas cada segundo de cada alumno pasan por Cloudflare: con una clase normal (decenas de alumnos)
   es un tráfico pequeño. Las páginas se sirven con `Cache-Control: no-cache`; si tras actualizar
   el programa los alumnos siguen viendo una versión antigua, purga la caché del dominio en Cloudflare.
@@ -223,6 +247,7 @@ antes de tener el dominio, un túnel temporal da una dirección `https://….try
 Cada `.yaml` de la carpeta `preguntas/` define uno o varios temas. Ver `preguntas/ejemplo.yaml`.
 
 - **`correcta` cuenta desde 1** (la primera opción es la 1).
+- **`identificacion`** (`true`/`false`, en el tema): alias de los alumnos y ranking; ver [Identificación y ranking](#identificación-y-ranking-opcional).
 - **`tiempo`** (segundos para responder): en el tema es el valor por defecto de sus preguntas; en una
   pregunta lo sustituye (`tiempo: 0` = esa pregunta sin límite). Si no aparece en ninguno, sin límite.
 - Las imágenes van en `preguntas/media/` y se referencian por ruta relativa, tanto en el enunciado
@@ -306,6 +331,8 @@ respuesta correcta.
 
 - El navegador del alumno genera un número aleatorio (`localStorage`) que solo sirve para contar un voto
   por pregunta. No se guarda IP ni nada identificable, y no aparece en ninguna pantalla.
+  Solo en los temas con [identificación](#identificación-y-ranking-opcional) se guarda además el alias
+  que elige el alumno, y se muestra en el ranking.
 - En modo local, el panel del docente solo responde a conexiones desde el propio equipo del servidor
   (se puede añadir además una clave con `PULSO_CLAVE`). **Esa comprobación no protege detrás de un
   túnel**, porque el túnel conecta desde `localhost`: por eso el [modo remoto](#modo-remoto-túnel-de-cloudflare)

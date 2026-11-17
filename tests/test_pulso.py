@@ -1128,3 +1128,266 @@ def test_el_estado_lleva_el_identificador_de_arranque(cliente, reloj):
     with TestClient(otra, client=("192.168.1.50", 5000)) as otro_alumno:
         assert estado(otro_alumno)["arranque"] != a        # un servidor nuevo tiene otro
 
+
+
+# ---------- identificación (alias) y ranking ----------
+IDENT = """
+temas:
+  r:
+    titulo: "Con ranking"
+    identificacion: true
+    preguntas:
+      - texto: "¿Capa de red?"
+        opciones: ["Enlace", "Red"]
+        correcta: 2
+      - tipo: multiopcion
+        texto: "¿Privadas?"
+        opciones: ["10.0.0.5", "8.8.8.8", "192.168.1.20", "172.16.4.9"]
+        correcta: [1, 3, 4]
+      - tipo: encuesta
+        texto: "¿Te gusta?"
+        opciones: ["Sí", "No"]
+  s:
+    titulo: "Sin ranking"
+    preguntas:
+      - texto: "¿Capa de red?"
+        opciones: ["Enlace", "Red"]
+        correcta: 2
+"""
+TOKENS = [chr(97 + i) * 16 for i in range(8)]   # a…h
+
+
+@pytest.fixture
+def ident(tmp_path, reloj):
+    d = escribe(tmp_path, IDENT)
+    app = crear_app(cargar(d), d, 8000, reloj=reloj)
+    with TestClient(app, client=("127.0.0.1", 5000)) as docente, \
+         TestClient(app, client=("192.168.1.50", 5000)) as alumno:
+        yield docente, alumno
+
+
+def alias(alumno, token, nombre):
+    return alumno.post("/api/alias", json={"token": token, "alias": nombre})
+
+
+def entran(alumno, n):
+    for t, nombre in zip(TOKENS[:n], "Ana Beto Cris Dani Eva Fran Gus Hugo".split()):
+        assert alias(alumno, t, nombre).status_code == 200
+
+
+def ranking_docente(docente):
+    v = docente.get("/api/docente/estado").json()
+    return v.get("ranking") or v["resumen"].get("ranking")
+
+
+def test_la_identificacion_es_una_opcion_del_tema(tmp_path):
+    temas = cargar(PREGUNTAS)
+    assert temas["multiopcion"].identificacion and not temas["redes"].identificacion
+    d = escribe(tmp_path, IDENT.replace("identificacion: true", "identificacion: 1"))
+    with pytest.raises(ErrorBanco, match="identificacion"):
+        cargar(d)
+
+
+def test_sin_identificacion_no_hay_alias_ni_ranking(ident):
+    docente, alumno = ident
+    inicia(docente, "s")
+    assert "identificacion" not in estado(alumno, token=TOKEN_A)
+    assert alias(alumno, TOKEN_A, "Ana").status_code == 409
+    assert responde(alumno, TOKEN_A, 1).status_code == 200
+    docente.post("/api/docente/cerrar")
+    assert "ranking" not in docente.get("/api/docente/estado").json()
+
+
+def test_el_alumno_ve_que_debe_poner_alias_y_no_puede_responder_sin_el(ident):
+    docente, alumno = ident
+    docente.post("/api/docente/tema/r")
+    v = estado(alumno, token=TOKEN_A)
+    assert v["identificacion"] is True and "alias" not in v
+    docente.post("/api/docente/empezar")
+    assert responde(alumno, TOKEN_A, 1).status_code == 409
+    assert alias(alumno, TOKEN_A, "Ana").status_code == 200
+    assert estado(alumno, token=TOKEN_A)["alias"] == "Ana"
+    assert responde(alumno, TOKEN_A, 1).status_code == 200
+
+
+@pytest.mark.parametrize("nombre", ["", "   ", "x" * 21, "a\u0000b"])
+def test_alias_no_valido(ident, nombre):
+    docente, alumno = ident
+    docente.post("/api/docente/tema/r")
+    assert alias(alumno, TOKEN_A, nombre).status_code == 400
+
+
+def test_no_se_admiten_alias_repetidos(ident):
+    docente, alumno = ident
+    docente.post("/api/docente/tema/r")
+    assert alias(alumno, TOKEN_A, "Ana  López").status_code == 200
+    r = alias(alumno, TOKEN_B, " ana lópez ")          # mayúsculas y espacios no distinguen
+    assert r.status_code == 400 and "en uso" in r.json()["detail"]
+    assert alias(alumno, TOKEN_B, "Beto").status_code == 200
+    assert alias(alumno, TOKEN_A, "Ana  López").status_code == 200   # reenvío idéntico: sin error
+    assert alias(alumno, TOKEN_A, "Otro").status_code == 409         # no se cambia de alias
+    assert estado(alumno, token=TOKEN_A)["alias"] == "Ana López"
+
+
+def test_el_alias_sobrevive_a_recargar_la_pagina(ident):
+    docente, alumno = ident
+    inicia(docente, "r")
+    alias(alumno, TOKEN_A, "Ana")
+    responde(alumno, TOKEN_A, 1)
+    v = estado(alumno, token=TOKEN_A)        # misma persona, otra carga de página (mismo token)
+    assert v["alias"] == "Ana" and v["mi_respuesta"] == 1
+
+
+def test_puntos_100_y_bonus_por_orden_de_acierto(ident):
+    docente, alumno = ident
+    inicia(docente, "r")
+    entran(alumno, 8)
+    # A y B aciertan, C falla; D…H aciertan después: 10, 8, 5, 2, 1 y 0 de bonus
+    orden = [(0, 1), (1, 1), (2, 0), (3, 1), (4, 1), (5, 1), (6, 1), (7, 1)]
+    for i, valor in orden:
+        assert responde(alumno, TOKENS[i], valor).status_code == 200
+    docente.post("/api/docente/cerrar")
+    puntos = {f["alias"]: f["puntos"] for f in docente.app.state.sesion.ranking(0)}   # todos, no solo 5
+    assert puntos == {"Ana": 110, "Beto": 108, "Cris": 0, "Dani": 105, "Eva": 102,
+                      "Fran": 101, "Gus": 100, "Hugo": 100}
+
+
+def test_el_ranking_entre_preguntas_son_los_5_primeros_ordenados_por_puntos(ident):
+    docente, alumno = ident
+    inicia(docente, "r")
+    entran(alumno, 8)
+    for i in range(8):
+        responde(alumno, TOKENS[i], 1)
+    docente.post("/api/docente/cerrar")
+    r = docente.get("/api/docente/estado").json()["ranking"]
+    assert [(f["alias"], f["puntos"]) for f in r] == [
+        ("Ana", 110), ("Beto", 108), ("Cris", 105), ("Dani", 102), ("Eva", 101)]
+    assert estado(alumno, token=TOKENS[0]).get("ranking") is None    # el alumno no lo recibe
+
+
+def test_el_ranking_tiene_menos_de_5_si_hay_menos_participantes(ident):
+    docente, alumno = ident
+    inicia(docente, "r")
+    entran(alumno, 2)
+    responde(alumno, TOKENS[0], 0)           # falla
+    docente.post("/api/docente/cerrar")
+    r = docente.get("/api/docente/estado").json()["ranking"]
+    assert [(f["alias"], f["puntos"]) for f in r] == [("Ana", 0), ("Beto", 0)]   # empate: alfabético
+
+
+def test_cambiar_la_respuesta_cuenta_desde_que_se_reenvia(ident):
+    docente, alumno = ident
+    inicia(docente, "r")
+    entran(alumno, 3)
+    responde(alumno, TOKENS[0], 1)      # Ana acierta la primera…
+    responde(alumno, TOKENS[1], 1)      # Beto
+    responde(alumno, TOKENS[0], 1)      # …y la reenvía: pasa al final
+    responde(alumno, TOKENS[2], 0)      # Cris falla y luego acierta
+    responde(alumno, TOKENS[2], 1)
+    docente.post("/api/docente/cerrar")
+    puntos = {f["alias"]: f["puntos"] for f in ranking_docente(docente)}
+    assert puntos == {"Beto": 110, "Ana": 108, "Cris": 105}
+
+
+def test_acertar_y_luego_fallar_no_da_bonus(ident):
+    docente, alumno = ident
+    inicia(docente, "r")
+    entran(alumno, 2)
+    responde(alumno, TOKENS[0], 1)
+    responde(alumno, TOKENS[0], 0)      # Ana cambia a una respuesta mala
+    responde(alumno, TOKENS[1], 1)
+    docente.post("/api/docente/cerrar")
+    puntos = {f["alias"]: f["puntos"] for f in ranking_docente(docente)}
+    assert puntos == {"Beto": 110, "Ana": 0}
+
+
+def test_multiopcion_parcial_es_proporcional_y_sin_bonus(ident):
+    docente, alumno = ident
+    inicia(docente, "r")
+    entran(alumno, 3)
+    for t in TOKENS[:3]:
+        responde(alumno, t, 1)
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")          # pregunta 2 (multiopción, correctas 1, 3 y 4)
+    responde(alumno, TOKENS[0], [0, 1, 2, 3][:1] + [2])   # 2 de 3 correctas: parcial
+    responde(alumno, TOKENS[1], [0, 2, 3])                # todas: acierto, primero
+    responde(alumno, TOKENS[2], [0, 1, 2, 3])             # 3 correctas y 1 mala: (3-1)/3, parcial
+    docente.post("/api/docente/cerrar")
+    puntos = {f["alias"]: f["puntos"] for f in ranking_docente(docente)}
+    # pregunta 1: 110, 108, 105; pregunta 2: Ana 67, Beto 100+10, Cris 67
+    assert puntos == {"Ana": 110 + 67, "Beto": 108 + 110, "Cris": 105 + 67}
+
+
+def test_las_encuestas_no_puntuan_ni_muestran_ranking(ident):
+    docente, alumno = ident
+    inicia(docente, "r")
+    entran(alumno, 1)
+    responde(alumno, TOKENS[0], 1)
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+    responde(alumno, TOKENS[0], [0, 2, 3])
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")          # encuesta
+    responde(alumno, TOKENS[0], 0)
+    docente.post("/api/docente/cerrar")
+    assert "ranking" not in docente.get("/api/docente/estado").json()
+    docente.post("/api/docente/siguiente")          # resumen
+    assert [(f["alias"], f["puntos"]) for f in ranking_docente(docente)] == [("Ana", 220)]
+
+
+def test_el_ranking_acumula_hasta_la_pregunta_que_se_muestra(ident):
+    docente, alumno = ident
+    inicia(docente, "r")
+    entran(alumno, 2)
+    responde(alumno, TOKENS[0], 1)
+    responde(alumno, TOKENS[1], 1)
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+    responde(alumno, TOKENS[1], [0, 2, 3])
+    docente.post("/api/docente/cerrar")
+    assert [(f["alias"], f["puntos"]) for f in ranking_docente(docente)] == [("Beto", 218), ("Ana", 110)]
+    docente.post("/api/docente/anterior")           # volver a la 1: solo cuenta hasta ella
+    assert [(f["alias"], f["puntos"]) for f in ranking_docente(docente)] == [("Ana", 110), ("Beto", 108)]
+
+
+def test_el_resumen_lleva_el_ranking_completo_solo_para_el_docente(ident):
+    docente, alumno = ident
+    inicia(docente, "r")
+    entran(alumno, 7)
+    for i in range(7):
+        responde(alumno, TOKENS[i], 1)
+    docente.post("/api/docente/cerrar")
+    for _ in range(3):
+        docente.post("/api/docente/siguiente")
+        docente.post("/api/docente/cerrar")
+    v = docente.get("/api/docente/estado").json()
+    assert v["fase"] == "resumen" and len(v["resumen"]["ranking"]) == 7
+    assert "ranking" not in estado(alumno, token=TOKENS[0])["resumen"]
+
+
+def test_al_volver_a_los_temas_se_olvidan_los_alias(ident):
+    docente, alumno = ident
+    inicia(docente, "r")
+    alias(alumno, TOKEN_A, "Ana")
+    docente.post("/api/docente/inicio")
+    docente.post("/api/docente/tema/r")
+    assert "alias" not in estado(alumno, token=TOKEN_A)
+    assert alias(alumno, TOKEN_B, "Ana").status_code == 200
+
+
+def test_el_docente_ve_que_el_tema_tiene_ranking(ident):
+    docente, _ = ident
+    temas = {t["id"]: t["identificacion"] for t in docente.get("/api/docente/estado").json()["temas"]}
+    assert temas == {"r": True, "s": False}
+
+
+def test_alias_en_modo_remoto_exige_estar_admitido(tmp_path, reloj):
+    d = escribe(tmp_path, IDENT)
+    app = crear_app(cargar(d), d, 8000, reloj=reloj, url_publica=URL_PUBLICA, clave=CLAVE)
+    with TestClient(app, client=("127.0.0.1", 5000)) as docente, \
+         TestClient(app, client=("127.0.0.1", 5001)) as alumno:
+        login(docente)
+        docente.post("/api/docente/tema/r")
+        assert alias(alumno, TOKEN_A, "Ana").status_code == 401
+        entra(alumno, TOKEN_A, app.state.sesion.codigo)
+        assert alias(alumno, TOKEN_A, "Ana").status_code == 200

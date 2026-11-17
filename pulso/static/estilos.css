@@ -247,6 +247,19 @@ body.docente .img-opcion { max-height: 4em; }
   border-left: 2px solid var(--amber); color: var(--muted);
 }
 
+/* ranking (tests con identificación): alias y puntos, sin posiciones */
+.ranking { margin: 1em 0 0; }
+.ranking-lista {
+  list-style: none; padding: 0; margin: .4em 0 0; display: grid; gap: .25em .8em;
+  grid-template-columns: repeat(auto-fill, minmax(11em, 1fr));
+}
+.ranking-lista li {
+  display: flex; justify-content: space-between; gap: 1em; padding: .25em .7em;
+  background: var(--bg-soft); border: 1px solid var(--line);
+}
+.ranking-alias { font-weight: 800; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ranking-puntos { font-family: var(--mono); font-weight: 900; color: var(--amber); font-variant-numeric: tabular-nums; }
+
 /* resumen final del test */
 .tabla-resumen { list-style: none; padding: 0; margin: 1em 0 0; display: grid; gap: .4em; }
 .fr { display: flex; align-items: center; gap: .8em; padding: .35em .6em .35em 0; border-bottom: 1px solid #7f8db22b; }

@@ -94,9 +94,10 @@ class Sesion:
         self.fase = "sala"
 
     def empezar(self) -> None:
-        """Sale de la sala de espera y presenta la primera pregunta."""
+        """Borra las respuestas anteriores y presenta la primera pregunta."""
         if self.fase != "sala":
             raise EstadoInvalido("El test ya ha empezado")
+        self.respuestas.clear()
         self._ir_a(0)
 
     def cerrar(self) -> None:

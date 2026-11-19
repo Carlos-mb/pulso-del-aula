@@ -336,6 +336,8 @@ def test_sala_de_espera_hasta_que_el_docente_empieza(cliente, reloj):
     assert e["tema"]["titulo"] == "Redes básicas" and e["total"] == 2
     assert "pregunta" not in e and "tiempo" not in e
 
+    sesion = docente.app.state.sesion
+    sesion.respuestas = {"redes-01": {TOKEN_A: 1}, "redes-02": {TOKEN_B: 0}}
     reloj.t += 3600                      # por mucho que pase el tiempo, no se abre sola
     assert estado(alumno)["fase"] == "sala"
     assert docente.post("/api/docente/cerrar").status_code == 200       # no-op
@@ -345,6 +347,7 @@ def test_sala_de_espera_hasta_que_el_docente_empieza(cliente, reloj):
     assert docente.post("/api/docente/empezar").status_code == 200
     e = estado(alumno)
     assert e["fase"] == "abierta" and e["tiempo"]["restante"] == 30.0   # el tiempo cuenta desde aquí
+    assert sesion.respuestas == {}
     assert docente.post("/api/docente/empezar").status_code == 409      # ya ha empezado
 
 

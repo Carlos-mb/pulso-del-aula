@@ -303,11 +303,11 @@ body.docente .img-opcion { max-height: 4em; }
   display: flex; align-items: center; gap: .5em; flex-wrap: wrap; justify-content: center;
   background: #0c0e0df5; border: 1px solid var(--line-bright); padding: .6em .8em;
   box-shadow: 0 18px 58px #0000006b;
-  font-size: 13px; transition: opacity .3s; z-index: 10;
+  font-size: 15px; transition: opacity .3s; z-index: 10;
 }
 .barra.oculta, .mostrar.oculta { opacity: 0; pointer-events: none; }
 .mostrar {
-  position: fixed; right: 1em; bottom: 1em; z-index: 10; font-size: 13px;
+  position: fixed; right: 1em; bottom: 1em; z-index: 10; font-size: 15px;
   background: #0c0e0df5; border-color: var(--line-bright); transition: opacity .3s, border-color .16s, background .16s;
 }
 .btn {

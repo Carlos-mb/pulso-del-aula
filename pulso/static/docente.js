@@ -224,14 +224,15 @@ function pantallaResumen(d) {
   ];
 }
 
-// La pantalla se proyecta y no se puede desplazar: si el contenido no cabe en la
-// ventana, se reduce el tamaño de letra hasta que quepa (mínimo 45 %).
+// En las pantallas de pregunta se reduce el tamaño de letra si el contenido no
+// cabe en la ventana. El resumen puede ocupar varias pantallas y se desplaza.
 function ajustar() {
   const raiz = document.documentElement;
   let escala = 1;
   raiz.style.setProperty('--escala', escala);
+  if (vista.fase === 'resumen') return;
   while (escala > 0.45 && raiz.scrollHeight > window.innerHeight + 1) {
-    escala = Math.round((escala - 0.03) * 100) / 100;
+    escala = Math.max(0.45, Math.round((escala - 0.03) * 100) / 100);
     raiz.style.setProperty('--escala', escala);
   }
 }

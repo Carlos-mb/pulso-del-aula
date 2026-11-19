@@ -60,6 +60,9 @@ img { max-width: 100%; }
   color: var(--cyan); text-transform: lowercase;
   font-family: var(--mono); font-weight: 800;
 }
+.eyebrow.legal {
+  text-transform: none;
+}
 .eyebrow::after {
   content: ""; width: .5em; height: 1em; background: var(--amber);
   box-shadow: 0 0 22px #f7a41d5c;

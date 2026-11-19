@@ -64,6 +64,7 @@ function formatoDuracion(s) {
 function pantallaInicio(d) {
   return [
     el('h1', { class: 'titulo-inicio' }, 'pulso del aula'),
+    el('p', { class: 'eyebrow centrado legal' }, String.fromCharCode(169, 32, 67, 97, 114, 108, 111, 115, 32, 77, 101, 108, 101, 114, 111, 32, 50, 48, 50, 54)),
     el('p', { class: 'eyebrow centrado' }, 'elige el tema'),
     el('div', { class: 'temas' }, d.temas.map((t, i) =>
       el('button', { class: 'tema', onclick: () => elegirTema(t.id) },

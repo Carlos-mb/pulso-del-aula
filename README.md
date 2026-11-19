@@ -26,6 +26,8 @@ python3 -m venv .venv
 
 **Windows (PowerShell o CMD):**
 
+**Usuarios de Onedrive:** Si vas a sincronizar la carpeta entre diferentes ordenadores, no instales el entorno virtual en .venv
+
 ```bat
 git clone https://github.com/Carlos-mb/pulso-del-aula.git
 cd pulso-del-aula

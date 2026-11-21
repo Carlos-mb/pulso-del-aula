@@ -114,7 +114,8 @@ Opciones: `--preguntas CARPETA` (por defecto `./preguntas`), `--puerto N`, `--ho
 5. Tras la última pregunta se muestra el **resumen**: aciertos, parciales (solo en `multiopcion`), errores y
    «no lo sé» del conjunto y de cada pregunta. Cada pregunta lista además **sus respuestas con el porcentaje
    de alumnos que eligió cada una** (la correcta, con ✓, y «no lo sé» aparte). Las encuestas solo muestran ese
-   reparto y no cuentan en el conjunto.
+   reparto y no cuentan en el conjunto. El botón **Guardar resumen (.md)** de la barra descarga ese resumen
+   en Markdown, como documento de trabajo: solo texto (las imágenes no se incluyen) y el ranking, si lo hay.
 
 ### Identificación y ranking (opcional)
 
@@ -433,6 +434,7 @@ pulso/tipos.py      tipos de pregunta (una clase por tipo; hoy: una_opcion, mult
 pulso/cargador.py   lectura y validación del YAML (temas, tiempos, imágenes)
 pulso/estado.py     estado de la sesión y fases (inicio → sala → [enunciado →] abierta → cerrada → resumen), temporizador y presencia
 pulso/app.py        rutas FastAPI
+pulso/informe.py    resumen final en Markdown (botón «Guardar resumen»)
 pulso/static/       vistas de alumno y docente (JS plano, sin paso de build); markdown.js es el Markdown
 pulso/recursos.py   localiza static/ también cuando se empaquete con PyInstaller
 tests/              pytest (las pruebas del Markdown están en JavaScript: se ejecutan con Node si está instalado)

@@ -298,6 +298,11 @@ function boton(texto, fn, extra) {
     onmousedown: e => e.preventDefault() }, texto);
 }
 
+// Descarga el resumen en Markdown (lo genera el servidor; solo texto, sin imágenes).
+function guardarResumen() {
+  el('a', { href: '/api/docente/resumen.md', download: '' }).click();
+}
+
 function actualizarBarra(d) {
   const b = [];
   const borrar = () => {
@@ -322,6 +327,7 @@ function actualizarBarra(d) {
   } else if (d.fase === 'resumen') {
     b.push(boton('◀ Última pregunta', () => ejecutar('anterior')));
     b.push(boton('Volver a los temas ▶', () => ejecutar('siguiente'), 'principal'));
+    b.push(boton('Guardar resumen (.md)', guardarResumen));
   }
   if (d.fase !== 'inicio') b.push(boton('Temas', () => ejecutar('inicio')));
   b.push(boton('Ocultar ▼', () => ponerBarraOculta(true)));

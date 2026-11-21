@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import socket
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
@@ -15,6 +17,7 @@ from .acceso import (AccesoDocente, Bloqueado, CodigoIncorrecto, NoAdmitido, cod
                      qr_svg)
 from .cargador import Tema
 from .estado import EstadoInvalido, Sesion
+from .informe import resumen_md
 from .recursos import recurso
 
 
@@ -183,6 +186,19 @@ def crear_app(
     @docente.get("/estado")
     async def estado_docente() -> dict:
         return sesion.vista(docente=True)
+
+    @docente.get("/resumen.md")
+    async def guardar_resumen() -> Response:
+        if sesion.fase != "resumen" or sesion.tema is None:
+            raise EstadoInvalido("El resumen solo se puede guardar al acabar el test")
+        ahora = datetime.now()
+        nombre = f"resumen-{sesion.tema.id}-{ahora:%Y%m%d-%H%M}.md"
+        return Response(
+            resumen_md(sesion.tema.titulo, sesion.resumen(con_ranking=True), ahora),
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition":
+                     f"attachment; filename=\"resumen.md\"; filename*=UTF-8''{quote(nombre)}"},
+        )
 
     @docente.post("/tema/{tema_id}")
     async def elegir_tema(tema_id: str) -> dict:

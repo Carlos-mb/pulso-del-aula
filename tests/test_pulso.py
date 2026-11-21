@@ -348,6 +348,55 @@ def test_resumen_con_preguntas_sin_respuestas(cliente):
     assert all(c["pct"] == 0.0 for c in r["global"]["categorias"])
 
 
+def test_guardar_resumen_en_markdown(cliente):
+    docente, alumno = cliente
+    inicia(docente, "redes")
+    assert docente.get("/api/docente/resumen.md").status_code == 409   # aún no ha acabado
+    responde(alumno, TOKEN_A, 1)          # acierto
+    responde(alumno, TOKEN_B, 0)          # error
+    responde(alumno, TOKEN_C, "nose")     # no lo sé
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+    responde(alumno, TOKEN_A, 1)          # acierto
+    responde(alumno, TOKEN_B, 1)          # acierto
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+
+    assert alumno.get("/api/docente/resumen.md").status_code == 403   # solo el docente
+    r = docente.get("/api/docente/resumen.md")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/markdown")
+    assert "attachment" in r.headers["content-disposition"]
+    assert "resumen-redes-" in r.headers["content-disposition"]
+    md = r.text
+    assert md.startswith("# Resumen: Redes básicas\n")
+    assert "**Global** (5 respuestas en preguntas con solución): Aciertos 60 % (3) · Error 20 % (1) · No lo sé 20 % (1)" in md
+    assert "## Ranking final\n\n- alumno-aaaaaa: 220 puntos\n- alumno-bbbbbb: 108 puntos\n- alumno-cccccc: 0 puntos" in md
+    assert ("## Pregunta 1\n\n¿Qué capa del modelo OSI se encarga del enrutamiento?\n\n"
+            "*3 respuestas · Aciertos 33 % (1) · Error 33 % (1) · No lo sé 33 % (1)*\n\n"
+            "- **A** · 33 % (1) · Enlace de datos\n"
+            "- **B** · 33 % (1) ✓ correcta · Red\n"
+            "- **C** · 0 % (0) · Transporte\n"
+            "- **D** · 0 % (0) · Aplicación\n"
+            "- **?** · 33 % (1) · No lo sé / quiero que se explique") in md
+    assert "## Pregunta 2" in md and "- **B** · 100 % (2) ✓ correcta · 172.16.4.20" in md
+
+
+def test_resumen_markdown_solo_texto():
+    from datetime import datetime
+
+    from pulso.informe import resumen_md
+    q = {"indice": 0, "texto": "¿Qué imprime?", "tipo": "encuesta", "total": 0, "categorias": [],
+         "opciones": [{"texto": None, "imagen": "/media/a.svg", "n": 0, "pct": 0.0, "correcta": False},
+                      {"texto": "```\nprint(1)\n```", "imagen": None, "n": 0, "pct": 0.0, "correcta": False}]}
+    md = resumen_md("T", {"preguntas": [q], "global": {"total": 0, "categorias": []}},
+                    datetime(2026, 11, 21, 9, 5))
+    assert "21/11/2026 09:05" in md and "**Global**" not in md and "Ranking" not in md
+    assert "*encuesta · 0 respuestas*" in md
+    assert "- **A** · – · (imagen)" in md and "/media/" not in md
+    assert "- **B** · –\n\n  ```\n  print(1)\n  ```" in md   # varias líneas: sangradas dentro del punto
+
+
 # ---------- seguridad y recursos ----------
 def test_panel_docente_solo_en_local(cliente):
     docente, alumno = cliente

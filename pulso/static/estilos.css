@@ -265,7 +265,7 @@ body.docente .img-opcion { max-height: 4em; }
 .ranking-puntos { font-family: var(--mono); font-weight: 900; color: var(--amber); font-variant-numeric: tabular-nums; }
 
 /* resumen final del test */
-.tabla-resumen { list-style: none; padding: 0; margin: 1em 0 0; display: grid; gap: .4em; }
+.tabla-resumen { list-style: none; padding: 0; margin: 1em 0 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: .4em; }
 .fr { display: flex; align-items: center; gap: .8em; padding: .35em .6em .35em 0; border-bottom: 1px solid #7f8db22b; }
 .fr-cuerpo { flex: 1; min-width: 0; }
 .fr-texto { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; margin-bottom: .25em; }

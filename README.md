@@ -156,7 +156,7 @@ La barra de controles aparece al mover el ratón y se oculta sola a los 3 segund
 | `Espacio` / `Intro` | Sala → empezar el test · enunciado de una pregunta rápida → mostrar las respuestas · votación abierta → cerrarla · cerrada → siguiente pregunta · resumen → volver a los temas |
 | `←` / `→` | Pregunta anterior / siguiente (con la votación cerrada, o en el enunciado de una pregunta rápida) |
 | `Esc` | Volver a la lista de temas |
-| `1`–`9` | Elegir tema (pantalla inicial) |
+| `1`–`9`, `a`–`z` | Elegir tema (pantalla inicial). Se saltan las letras que son atajos (`H`, `P`): el tema 10 es `a`, el 17 es `i`… |
 | `P` | Pausar / reanudar el tiempo (votación abierta con tiempo) |
 | `H` | Ocultar / mostrar la barra de controles |
 

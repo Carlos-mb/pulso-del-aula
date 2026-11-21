@@ -184,7 +184,7 @@ body.docente .img-opcion { max-height: 4em; }
 .qr { width: 15em; height: 15em; background: #fff; flex: none; }
 .codigo-sala { font-family: var(--mono); font-size: 4.2em; font-weight: 900; letter-spacing: .15em; color: var(--amber); line-height: 1.1; }
 .titulo-inicio { font-family: var(--mono); font-size: 3.4em; font-weight: 900; margin: 1.1em 0 .3em; text-align: center; line-height: 1; }
-.temas { display: grid; gap: .7em; max-width: 34em; margin: 1.2em auto 0; }
+.temas { display: grid; gap: .7em; max-width: 40em; margin: 1.2em auto 0; }
 .tema {
   display: flex; align-items: center; gap: .8em; width: 100%;
   background: var(--bg-soft); font: inherit; color: var(--text); text-align: left;
@@ -192,8 +192,17 @@ body.docente .img-opcion { max-height: 4em; }
   transition: border-color .16s, background .16s;
 }
 .tema:hover { border-color: var(--amber); background: #f7a41d14; }
-.tema-titulo { flex: 1; font-weight: 800; }
-.tema-n { color: var(--dim); font-family: var(--mono); font-size: .8em; }
+.tema .letra.vacia { visibility: hidden; }
+.tema-cuerpo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .3em; }
+.tema-titulo { font-weight: 800; font-size: 1.1em; overflow-wrap: anywhere; }
+.tema-info {
+  display: flex; flex-wrap: wrap; gap: .2em 1.1em;
+  color: var(--dim); font-family: var(--mono); font-size: .8em;
+}
+.tema-dato { display: inline-flex; align-items: center; gap: .35em; white-space: nowrap; }
+.tema-dato .icono { display: inline-flex; width: 1.15em; height: 1.15em; flex: none; }
+.tema-dato .icono svg { width: 100%; height: 100%; }
+.tema:hover .tema-info { color: var(--amber-soft); }
 
 /* sala de espera */
 .sala-titulo { margin-top: 1.5em; font-size: 1.1em; }

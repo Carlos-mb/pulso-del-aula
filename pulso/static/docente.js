@@ -1,6 +1,7 @@
 // Vista única del docente: lo que se proyecta y, ocultos, los controles.
 // Atajos: Espacio/Intro = acción principal · ← → = anterior/siguiente ·
-//         Esc = volver a los temas · 1-9 = elegir tema (en la pantalla inicial) ·
+//         Esc = volver a los temas · 1-9, a-z = elegir tema (en la pantalla inicial; se saltan
+//         las letras que son atajos, ver ATAJOS_LETRA) ·
 //         H = ocultar / mostrar la barra de controles · P = pausar / reanudar el tiempo
 
 const app = document.getElementById('app');
@@ -58,9 +59,25 @@ function accionPrincipal() {
 const ICONO = { acierto: '✓', error: '✗', nose: '?', parcial: '≈' };
 
 // ---------- pantallas ----------
-function formatoDuracion(s) {
-  return s ? ` · ${formatoTiempo(s)} por pregunta` : '';
+// Iconos monocromos (heredan el color del texto) para los datos de cada tema.
+const SVG_TEMA = {
+  preguntas: '<circle cx="12" cy="12" r="9.5"/><path d="M9.2 9.2a2.9 2.9 0 0 1 5.6 1c0 1.9-2.8 2.6-2.8 4"/><path d="M12 17.6v.01"/>',
+  tiempo: '<circle cx="12" cy="13.5" r="8"/><path d="M12 9.5v4l2.6 1.8"/><path d="M9.5 2.5h5"/>',
+  rapido: '<path d="M13 2.5 4 14h7l-1 7.5L19 10h-7z"/>',
+  ranking: '<path d="M7 3.5h10V9a5 5 0 0 1-10 0z"/><path d="M7 5.5H4.5a3 3 0 0 0 3 4.3M17 5.5h2.5a3 3 0 0 1-3 4.3"/><path d="M12 14v3.5M8 21h8M9.5 17.5h5"/>',
+};
+
+function icono(nombre) {
+  const s = document.createElement('span');
+  s.className = 'icono';
+  s.setAttribute('aria-hidden', 'true');
+  s.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
+    + ' stroke-linecap="round" stroke-linejoin="round">' + SVG_TEMA[nombre] + '</svg>';
+  return s;
 }
+
+const datoTema = (nombre, texto, titulo) =>
+  el('span', { class: 'tema-dato', title: titulo }, icono(nombre), texto);
 
 function pantallaInicio(d) {
   return [
@@ -69,11 +86,14 @@ function pantallaInicio(d) {
     el('p', { class: 'eyebrow centrado' }, 'elige el tema'),
     el('div', { class: 'temas' }, d.temas.map((t, i) =>
       el('button', { class: 'tema', onclick: () => elegirTema(t.id) },
-        el('span', { class: 'letra' }, String(i + 1)),
-        el('span', { class: 'tema-titulo' }, t.titulo),
-        el('span', { class: 'tema-n' },
-          `${t.n_preguntas} preguntas${formatoDuracion(t.tiempo)}${t.rapido ? ' · rápido' : ''}`
-          + `${t.identificacion ? ' · con ranking' : ''}`)))),
+        TECLAS_TEMA[i] ? el('span', { class: 'letra' }, TECLAS_TEMA[i]) : el('span', { class: 'letra vacia' }),
+        el('span', { class: 'tema-cuerpo' },
+          el('span', { class: 'tema-titulo' }, t.titulo),
+          el('span', { class: 'tema-info' },
+            datoTema('preguntas', String(t.n_preguntas), `${t.n_preguntas} preguntas`),
+            t.tiempo > 0 && datoTema('tiempo', formatoTiempo(t.tiempo), `${formatoTiempo(t.tiempo)} por pregunta`),
+            !!t.rapido && datoTema('rapido', 'rápido', 'preguntas rápidas'),
+            !!t.identificacion && datoTema('ranking', 'ranking', 'con ranking')))))),
   ];
 }
 
@@ -338,19 +358,28 @@ document.addEventListener('mousemove', mostrarBarra);
 mostrarBarra();
 
 // ---------- teclado ----------
+// Atajos de una letra, activos en todas las pantallas. Sus teclas quedan reservadas: la numeración
+// de los temas (1-9, a-z) se las salta, así que añadir aquí un atajo nuevo no choca con ningún tema.
+const ATAJOS_LETRA = {
+  h: () => ponerBarraOculta(!barraOculta),
+  p: () => { if (vista.fase === 'abierta' && vista.tiempo) ejecutar('pausar'); },
+};
+const TECLAS_TEMA = [...'123456789abcdefghijklmnopqrstuvwxyz'].filter(k => !(k in ATAJOS_LETRA));
+
 document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.altKey || e.metaKey) return;
   // Escribiendo en un campo (la clave): las teclas son suyas, no atajos (si no, Intro no envía el formulario).
   if (e.target instanceof Element && e.target.closest('input, textarea, select')) return;
   const enTema = vista.fase !== 'inicio';
-  if (e.key === 'h' || e.key === 'H') ponerBarraOculta(!barraOculta);
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (Object.hasOwn(ATAJOS_LETRA, k)) ATAJOS_LETRA[k]();
   else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); accionPrincipal(); }
-  else if ((e.key === 'p' || e.key === 'P') && vista.fase === 'abierta' && vista.tiempo) ejecutar('pausar');
   else if (e.key === 'ArrowRight' && enTema) ejecutar('siguiente');
   else if (e.key === 'ArrowLeft' && enTema) ejecutar('anterior');
   else if (e.key === 'Escape' && enTema) ejecutar('inicio');
-  else if (!enTema && /^[1-9]$/.test(e.key)) {
-    const t = vista.temas[Number(e.key) - 1];
+  else if (!enTema) {
+    const i = TECLAS_TEMA.indexOf(k);
+    const t = i >= 0 && vista.temas[i];
     if (t) elegirTema(t.id);
   }
 });

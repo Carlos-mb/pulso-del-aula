@@ -64,7 +64,7 @@ function formatoDuracion(s) {
 function pantallaInicio(d) {
   return [
     el('h1', { class: 'titulo-inicio' }, 'pulso del aula'),
-    el('p', { class: 'eyebrow centrado legal' }, String.fromCharCode(169, 32, 67, 97, 114, 108, 111, 115, 32, 77, 101, 108, 101, 114, 111, 32, 50, 48, 50, 54)),
+    el('p', { class: 'eyebrow centrado legal' }, String.fromCharCode(169, 32, 50, 48, 50, 54, 32, 67, 97, 114, 108, 111, 115, 32, 77, 101, 108, 101, 114, 111)),
     el('p', { class: 'eyebrow centrado' }, 'elige el tema'),
     el('div', { class: 'temas' }, d.temas.map((t, i) =>
       el('button', { class: 'tema', onclick: () => elegirTema(t.id) },
@@ -225,12 +225,13 @@ function pantallaResumen(d) {
 }
 
 // En las pantallas de pregunta se reduce el tamaño de letra si el contenido no
-// cabe en la ventana. El resumen puede ocupar varias pantallas y se desplaza.
+// cabe en la ventana. El resumen y el menú de temas pueden ocupar varias
+// pantallas: mantienen el tamaño de letra y se desplazan.
 function ajustar() {
   const raiz = document.documentElement;
   let escala = 1;
   raiz.style.setProperty('--escala', escala);
-  if (vista.fase === 'resumen') return;
+  if (vista.fase === 'resumen' || vista.fase === 'inicio') return;
   while (escala > 0.45 && raiz.scrollHeight > window.innerHeight + 1) {
     escala = Math.max(0.45, Math.round((escala - 0.03) * 100) / 100);
     raiz.style.setProperty('--escala', escala);

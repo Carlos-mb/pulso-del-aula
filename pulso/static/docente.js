@@ -226,12 +226,20 @@ function pantallaResumen(d) {
 
 // En las pantallas de pregunta se reduce el tamaño de letra si el contenido no
 // cabe en la ventana. El resumen y el menú de temas pueden ocupar varias
-// pantallas: mantienen el tamaño de letra y se desplazan.
+// pantallas: mantienen el tamaño de letra y se desplazan. Si el resumen no cabe,
+// las respuestas de cada pregunta pasan a ir una debajo de otra.
 function ajustar() {
   const raiz = document.documentElement;
   let escala = 1;
   raiz.style.setProperty('--escala', escala);
-  if (vista.fase === 'resumen' || vista.fase === 'inicio') return;
+  if (vista.fase === 'resumen') {
+    const tabla = app.querySelector('.tabla-resumen');
+    if (!tabla) return;
+    tabla.classList.remove('en-columna');
+    if (raiz.scrollHeight > window.innerHeight + 1) tabla.classList.add('en-columna');
+    return;
+  }
+  if (vista.fase === 'inicio') return;
   while (escala > 0.45 && raiz.scrollHeight > window.innerHeight + 1) {
     escala = Math.max(0.45, Math.round((escala - 0.03) * 100) / 100);
     raiz.style.setProperty('--escala', escala);

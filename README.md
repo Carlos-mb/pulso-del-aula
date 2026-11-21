@@ -95,6 +95,8 @@ Opciones: `--preguntas CARPETA` (por defecto `./preguntas`), `--puerto N`, `--ho
    tiempo** (botón «Pausar tiempo» o tecla `P`) y reanudarlo después: mientras está en pausa la cuenta
    queda detenida (con ⏸ en ambas pantallas), pero la votación sigue abierta. Las siguientes preguntas
    también se abren solas al avanzar.
+   En las [preguntas rápidas](#tipos-de-test-tipos-de-pregunta-y-cómo-se-combinan) primero se proyecta solo
+   el enunciado, y la votación y la cuenta atrás empiezan cuando el docente pulsa `Espacio`.
 4. La votación se cierra, y se muestran los resultados, en el primero de estos casos:
    - **han votado todos los alumnos conectados** (aunque quede tiempo),
    - se agota el tiempo de la pregunta,
@@ -151,8 +153,8 @@ La barra de controles aparece al mover el ratón y se oculta sola a los 3 segund
 
 | Tecla | Acción |
 |---|---|
-| `Espacio` / `Intro` | Sala → empezar el test · votación abierta → cerrarla · cerrada → siguiente pregunta · resumen → volver a los temas |
-| `←` / `→` | Pregunta anterior / siguiente (con la votación cerrada) |
+| `Espacio` / `Intro` | Sala → empezar el test · enunciado de una pregunta rápida → mostrar las respuestas · votación abierta → cerrarla · cerrada → siguiente pregunta · resumen → volver a los temas |
+| `←` / `→` | Pregunta anterior / siguiente (con la votación cerrada, o en el enunciado de una pregunta rápida) |
 | `Esc` | Volver a la lista de temas |
 | `1`–`9` | Elegir tema (pantalla inicial) |
 | `P` | Pausar / reanudar el tiempo (votación abierta con tiempo) |
@@ -278,6 +280,73 @@ Cada `.yaml` de la carpeta `preguntas/` define uno o varios temas. Ver `pregunta
   pónlo entre acentos graves.
 - La opción «No lo sé / quiero que se explique» la añade el sistema en las preguntas de test.
 
+### Tipos de test, tipos de pregunta y cómo se combinan
+
+Cada pregunta se configura en dos niveles: **el tema (test)**, que da valores por defecto a todas sus
+preguntas, y **la propia pregunta**, que puede sustituirlos. Son configuraciones independientes que se
+combinan entre sí.
+
+**Tipos de test (pulso):** un tema es **normal** o **rápido** (`rapido: true`; por defecto, normal).
+Por separado, puede ser anónimo o de **competición** (`modo_competicion: true`). Las dos cosas se
+pueden combinar: un test rápido de competición es válido.
+
+**Tipos de pregunta** (`tipo:` en la pregunta; por defecto `una_opcion`):
+
+| `tipo` | Respuesta | Puntúa |
+|---|---|---|
+| `una_opcion` | una opción, con una correcta | sí |
+| `multiopcion` | varias opciones, con varias correctas | sí, proporcional |
+| `encuesta` | una opción (o varias con `multiple: true`), sin correcta | no |
+
+**Preguntas rápidas.** En una pregunta rápida primero se proyecta **solo el enunciado**, también en la
+pantalla de los alumnos, sin las opciones y sin que se pueda responder. Cuando el docente pulsa
+`Espacio` / `Intro` (o el botón «Mostrar respuestas»), aparecen las opciones, se abre la votación y
+**empieza la cuenta atrás**. A partir de ahí funciona como cualquier otra pregunta. Las opciones no se
+envían a los alumnos hasta ese momento. Sirven para pruebas de velocidad.
+
+**Herencia y combinación:**
+
+| Configuración | En el tema | En la pregunta | Si no aparece |
+|---|---|---|---|
+| `tiempo` | valor por defecto de sus preguntas | lo sustituye (`0` = sin límite) | sin límite |
+| `rapido` | valor por defecto de sus preguntas **de test** (`una_opcion`, `multiopcion`) | lo sustituye (`true` / `false`) | normal |
+| `modo_competicion` | alias y ranking para todo el test | no se admite | anónimo |
+| `tipo` | no se admite | tipo de la pregunta | `una_opcion` |
+
+- **Encuestas en un tema rápido:** son **normales**, porque no heredan el `rapido` del tema.
+- **El tiempo de una pregunta rápida** es el suyo (`tiempo` de la pregunta o, si no tiene, el del tema), y
+  se cuenta desde que aparecen las respuestas, no desde que se proyecta el enunciado.
+- **Una pregunta rápida necesita tiempo:** si la pregunta queda rápida (por herencia o explícitamente) y su
+  tiempo resulta `0` o no hay, el servidor **no arranca** y da error con fichero, tema y pregunta.
+- **Una encuesta no puede ser rápida:** `rapido: true` en una encuesta da error al arrancar.
+- **En el enunciado** el docente puede cambiar de pregunta (`←` / `→`, o «Saltar pregunta») sin mostrar las
+  respuestas; esa pregunta no queda cerrada, así que al volver a ella se presenta de nuevo.
+- **Reabrir una pregunta rápida** vuelve a mostrar solo el enunciado y espera a que el docente pulse la
+  tecla; las respuestas que ya había se conservan. «Borrar respuestas» también vuelve al enunciado.
+- **Competición:** no cambia. El extra por rapidez depende del orden de llegada de las respuestas, no de
+  los segundos; como durante el enunciado no se puede responder, el orden empieza a contar al mostrar las
+  respuestas.
+
+```yaml
+temas:
+  velocidad:
+    titulo: "Repaso rápido"
+    rapido: true            # sus preguntas de test son rápidas
+    tiempo: 10              # 10 s desde que aparecen las respuestas
+    preguntas:
+      - texto: "¿Puerto de HTTPS?"
+        opciones: ["80", "443", "22"]
+        correcta: 2
+      - texto: "¿Qué protocolo resuelve nombres de dominio?"
+        rapido: false       # esta, normal
+        tiempo: 0           # y sin límite
+        opciones: ["DHCP", "DNS", "ARP"]
+        correcta: 2
+      - tipo: encuesta      # no hereda `rapido`: es normal
+        texto: "¿Te ha resultado fácil?"
+        opciones: ["Sí", "Regular", "No"]
+```
+
 ### Encuestas
 
 Una pregunta con `tipo: encuesta` sirve para empezar la sesión viendo el nivel de partida de la clase,
@@ -362,7 +431,7 @@ Los colores están como variables CSS al principio de `pulso/static/estilos.css`
 pulso/acceso.py     modo remoto: código de sala, clave del docente, límites de intentos y QR
 pulso/tipos.py      tipos de pregunta (una clase por tipo; hoy: una_opcion, multiopcion y encuesta)
 pulso/cargador.py   lectura y validación del YAML (temas, tiempos, imágenes)
-pulso/estado.py     estado de la sesión y fases (inicio → sala → abierta → cerrada → resumen), temporizador y presencia
+pulso/estado.py     estado de la sesión y fases (inicio → sala → [enunciado →] abierta → cerrada → resumen), temporizador y presencia
 pulso/app.py        rutas FastAPI
 pulso/static/       vistas de alumno y docente (JS plano, sin paso de build); markdown.js es el Markdown
 pulso/recursos.py   localiza static/ también cuando se empaquete con PyInstaller
@@ -372,4 +441,4 @@ tests/              pytest (las pruebas del Markdown están en JavaScript: se ej
 ## Estado
 
 Tipos: `una_opcion`, `multiopcion` y `encuesta` (esta, con una opción o con varias). Modo remoto con túnel de
-Cloudflare, código de sala y QR. Pendiente: verdadero/falso, numérica, empaquetado.
+Cloudflare, código de sala y QR. Preguntas rápidas. Pendiente: verdadero/falso, numérica, empaquetado.

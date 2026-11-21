@@ -50,6 +50,7 @@ function pedirClave() {
 
 function accionPrincipal() {
   if (vista.fase === 'sala') ejecutar('empezar');
+  else if (vista.fase === 'enunciado') ejecutar('mostrar');
   else if (vista.fase === 'abierta') ejecutar('cerrar');
   else if (vista.fase === 'cerrada' || vista.fase === 'resumen') ejecutar('siguiente');
 }
@@ -71,7 +72,8 @@ function pantallaInicio(d) {
         el('span', { class: 'letra' }, String(i + 1)),
         el('span', { class: 'tema-titulo' }, t.titulo),
         el('span', { class: 'tema-n' },
-          `${t.n_preguntas} preguntas${formatoDuracion(t.tiempo)}${t.identificacion ? ' · con ranking' : ''}`)))),
+          `${t.n_preguntas} preguntas${formatoDuracion(t.tiempo)}${t.rapido ? ' · rápido' : ''}`
+          + `${t.identificacion ? ' · con ranking' : ''}`)))),
   ];
 }
 
@@ -122,6 +124,16 @@ function pantallaAbierta(d) {
       `${p.tipo === 'encuesta' ? 'encuesta · ' : ''}${p.multiple ? 'marca todas las que correspondan · ' : ''}`
       + `votación abierta · ${d.n_respuestas} respuesta${d.n_respuestas === 1 ? '' : 's'}`
       + ` · ${d.conectados} conectado${d.conectados === 1 ? '' : 's'}`),
+  ];
+}
+
+// Pregunta rápida: solo el enunciado; las opciones salen cuando el docente pulsa Espacio.
+function pantallaEnunciado(d) {
+  return [
+    cabecera(d),
+    enunciado(d.pregunta),
+    el('p', { class: 'contador' },
+      `pregunta rápida · ${formatoTiempo(d.duracion)} para responder · pulsa Espacio para mostrar las respuestas`),
   ];
 }
 
@@ -247,10 +259,11 @@ function render(d) {
   else if (d.fase === 'sala') contenido = pantallaSala(d);
   else if (d.fase === 'resumen') contenido = pantallaResumen(d);
   else if (d.fase === 'cerrada') contenido = pantallaResultados(d);
+  else if (d.fase === 'enunciado') contenido = pantallaEnunciado(d);
   else contenido = pantallaAbierta(d);
   app.replaceChildren(...contenido.flat().filter(Boolean));
 
-  pie.replaceChildren(d.fase === 'abierta' || d.fase === 'inicio'
+  pie.replaceChildren(['abierta', 'enunciado', 'inicio'].includes(d.fase)
     ? el('span', {}, 'alumnos, entrad en ', el('b', {}, d.url_alumnos),
       d.codigo && [' · código ', el('b', {}, d.codigo)])
     : '');
@@ -272,6 +285,10 @@ function actualizarBarra(d) {
   };
   if (d.fase === 'sala') {
     b.push(boton('Empezar el test ▶', () => ejecutar('empezar'), 'principal'));
+  } else if (d.fase === 'enunciado') {
+    if (d.indice > 0) b.push(boton('◀ Anterior', () => ejecutar('anterior')));
+    b.push(boton('Mostrar respuestas ▶', () => ejecutar('mostrar'), 'principal'));
+    b.push(boton('Saltar pregunta', () => ejecutar('siguiente')));
   } else if (d.fase === 'abierta') {
     b.push(boton('Cerrar votación', () => ejecutar('cerrar'), 'principal'));
     if (d.tiempo) b.push(boton(d.tiempo.pausado ? '▶ Reanudar tiempo' : '⏸ Pausar tiempo', () => ejecutar('pausar')));

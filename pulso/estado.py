@@ -3,7 +3,9 @@
 Fases:
     inicio  -> el docente aún no ha elegido tema
     sala    -> tema elegido; se espera a que se conecten los alumnos
-    abierta -> pregunta presentada y votación abierta (se abre sola)
+    enunciado -> (solo preguntas rápidas) se ve el enunciado, sin opciones; aún no se vota
+    abierta -> pregunta presentada y votación abierta (se abre sola, o en las rápidas
+               cuando el docente muestra las respuestas)
     cerrada -> votación cerrada; se muestran los resultados
     resumen -> test terminado; se muestra el resumen de todas las preguntas
 
@@ -13,6 +15,8 @@ encuesta, además, al cerrarse porque han respondido todos se pasa sola a la
 siguiente pregunta (o al resumen, si era la última): sus resultados se ven en el resumen.
 El docente puede pausar la cuenta atrás: mientras está en pausa la votación sigue abierta
 pero no se cierra por tiempo; al reanudarla continúa desde lo que quedaba.
+En una pregunta rápida la cuenta atrás empieza al mostrar las respuestas, no al presentarla;
+al reabrirla o borrar sus respuestas se vuelve al enunciado.
 Se comprueba al atender cada petición (los clientes consultan cada segundo),
 así que no hace falta ningún hilo temporizador. Si el docente reabre una
 pregunta, esta ya no se cierra por «todos han votado» (solo por tiempo o a mano).
@@ -123,6 +127,12 @@ class Sesion:
         self.cerradas.pop(self.pregunta.id, None)
         self._abrir_pregunta(cierre_auto=False)
 
+    def mostrar_respuestas(self) -> None:
+        """Pregunta rápida: muestra las opciones, abre la votación y pone en marcha el tiempo."""
+        if self.fase != "enunciado":
+            raise EstadoInvalido("No hay una pregunta rápida esperando a mostrar sus respuestas")
+        self._abrir_votacion()
+
     def pausar(self) -> None:
         """Pausa la cuenta atrás de la pregunta abierta, o la reanuda si ya estaba en pausa."""
         self._tic(avanzar=False)
@@ -140,7 +150,7 @@ class Sesion:
     def reiniciar(self) -> None:
         """Borra las respuestas de la pregunta actual y la abre de nuevo."""
         self._tic(avanzar=False)
-        if self.fase not in ("abierta", "cerrada"):
+        if self.fase not in ("enunciado", "abierta", "cerrada"):
             raise EstadoInvalido("No hay una pregunta activa")
         self.respuestas.pop(self.pregunta.id, None)
         self.cerradas.pop(self.pregunta.id, None)
@@ -288,10 +298,18 @@ class Sesion:
         return self.respuestas.get(self.pregunta.id, {})
 
     def _abrir_pregunta(self, cierre_auto: bool = True) -> None:
+        """Presenta la pregunta actual: abre la votación, o solo el enunciado si es rápida."""
         assert self.tema is not None
-        self.fase = "abierta"
         self.cierre_auto = cierre_auto
         self.duracion = self.tema.tiempo_de(self.pregunta)
+        self.pausa_restante = None
+        if self.tema.rapido_de(self.pregunta):
+            self.fase, self.limite = "enunciado", None
+        else:
+            self._abrir_votacion()
+
+    def _abrir_votacion(self) -> None:
+        self.fase = "abierta"
         self.limite = self.reloj() + self.duracion if self.duracion else None
         self.pausa_restante = None
 
@@ -411,6 +429,9 @@ class Sesion:
                 v["indice"] = self.indice
                 v["n_respuestas"] = len(resp)
                 v["pregunta"] = p.publica()
+                if self.fase == "enunciado":   # las opciones no salen hasta que se muestran
+                    del v["pregunta"]["opciones"]
+                    v["duracion"] = self.duracion
                 if self.fase == "abierta" and self.pausa_restante is not None:
                     v["tiempo"] = {"total": self.duracion, "restante": round(self.pausa_restante, 2),
                                    "pausado": True}
@@ -425,14 +446,14 @@ class Sesion:
                     v["motivo_cierre"] = self.cerradas.get(p.id, "docente")
                     if docente and self.identificacion and p.puntua:
                         v["ranking"] = self.ranking(self.indice)[:TAM_RANKING]
-                if token is not None and token in resp:
+                if token is not None and token in resp and self.fase != "enunciado":
                     v["mi_respuesta"] = resp[token]
                     if self.fase == "cerrada" and p.puntua:
                         v["mi_categoria"] = p.evaluar(resp[token])[0]
         if docente:
             v["temas"] = [
                 {"id": t.id, "titulo": t.titulo, "n_preguntas": len(t.preguntas), "tiempo": t.tiempo,
-                 "identificacion": t.identificacion}
+                 "identificacion": t.identificacion, "rapido": t.rapido}
                 for t in self.temas.values()
             ]
             v["url_alumnos"] = self.url_alumnos

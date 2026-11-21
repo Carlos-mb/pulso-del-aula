@@ -26,6 +26,10 @@
 #   100 puntos por pregunta acertada (la parte proporcional en `multiopcion`) y un extra de
 #   10, 8, 5, 2 y 1 para los cinco primeros en acertar del todo. El ranking de los 5 primeros
 #   sale entre pregunta y pregunta, y el completo en el resumen. Ver los temas 'redes' y 'multiopcion'.
+# - Con `rapido: true` (en el tema o en una pregunta) la pregunta es rápida: primero se ve solo el
+#   enunciado y, cuando el docente pulsa Espacio, aparecen las respuestas y empieza la cuenta atrás.
+#   Las preguntas heredan el valor del tema, salvo las encuestas, que no pueden ser rápidas. Una
+#   pregunta rápida necesita tiempo. Ver el tema 'velocidad'.
 # - Si una opción puede confundirse con un valor YAML (Sí, No, On, Off...),
 #   entrecomíllala.
 
@@ -165,3 +169,23 @@ temas:
         tiempo: 40
         opciones: ["HTTP", "IP", "DNS", "Ethernet"]
         correcta: [1, 3]
+
+  velocidad:
+    titulo: "Repaso rápido"
+    rapido: true                    # primero el enunciado; las respuestas al pulsar Espacio
+    tiempo: 10                      # 10 s desde que aparecen las respuestas
+    preguntas:
+      - texto: "¿Puerto por defecto de HTTPS?"
+        opciones: ["80", "443", "22"]
+        correcta: 2
+      - texto: "¿Qué protocolo resuelve nombres de dominio?"
+        tiempo: 6                   # rápida, con su propio tiempo
+        opciones: ["DHCP", "DNS", "ARP"]
+        correcta: 2
+      - texto: "¿Cuántos bits tiene una dirección IPv4?"
+        rapido: false               # esta, normal (y con los 10 s del tema)
+        opciones: ["32", "64", "128"]
+        correcta: 1
+      - tipo: encuesta              # las encuestas no heredan 'rapido': es normal
+        texto: "¿Te ha resultado fácil?"
+        opciones: ["Sí", "Regular", "No"]

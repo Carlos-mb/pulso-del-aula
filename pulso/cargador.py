@@ -33,11 +33,18 @@ class Tema:
     titulo: str
     tiempo: int = 0  # segundos por defecto de sus preguntas; 0 = sin límite
     identificacion: bool = False  # los alumnos eligen un alias y hay ranking
+    rapido: bool = False  # sus preguntas de test son rápidas por defecto (las encuestas, no)
     preguntas: list[PreguntaBase] = field(default_factory=list)
 
     def tiempo_de(self, pregunta: PreguntaBase) -> int:
         """Tiempo de la pregunta, o el del tema si ella no define ninguno."""
         return self.tiempo if pregunta.tiempo is None else pregunta.tiempo
+
+    def rapido_de(self, pregunta: PreguntaBase) -> bool:
+        """¿Es rápida? La pregunta decide si lo indica; si no, hereda del tema salvo las encuestas."""
+        if pregunta.rapido is not None:
+            return pregunta.rapido
+        return self.rapido and getattr(pregunta, "puntua", True)
 
 
 def _formatea(e: ValidationError) -> str:
@@ -109,8 +116,11 @@ def cargar(directorio: Path) -> dict[str, Tema]:
                 raise ErrorBanco(
                     f"{fichero.name}, tema '{tid}': 'modo_competicion' debe ser true o false"
                 )
+            rapido = cuerpo.get("rapido", False)
+            if not isinstance(rapido, bool):
+                raise ErrorBanco(f"{fichero.name}, tema '{tid}': 'rapido' debe ser true o false")
             tema = Tema(id=tid, titulo=str(cuerpo.get("titulo", tid)), tiempo=tiempo,
-                        identificacion=identificacion)
+                        identificacion=identificacion, rapido=rapido)
             ids: set[str] = set()
             for n, raw in enumerate(cuerpo["preguntas"], start=1):
                 p = _pregunta(raw, tid, n, fichero)
@@ -119,6 +129,11 @@ def cargar(directorio: Path) -> dict[str, Tema]:
                     raise ErrorBanco(f"{ctx}: el id '{p.id}' está repetido en el tema")
                 ids.add(p.id)
                 _comprueba_imagenes(p, directorio / "media", ctx)
+                if tema.rapido_de(p) and not tema.tiempo_de(p):
+                    raise ErrorBanco(
+                        f"{ctx}: una pregunta rápida necesita tiempo "
+                        "('tiempo' en la pregunta o en el tema, mayor que 0)"
+                    )
                 tema.preguntas.append(p)
             temas[tid] = tema
     return temas

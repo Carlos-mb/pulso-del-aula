@@ -58,6 +58,9 @@ class PreguntaBase(BaseModel):
     explicacion: str | None = None
     # Segundos para responder. None = usar el valor del tema; 0 = sin límite.
     tiempo: int | None = Field(default=None, ge=0)
+    # Pregunta rápida: primero solo el enunciado; las opciones (y el tiempo) cuando el docente
+    # lo indique. None = usar el valor del tema (las encuestas no lo heredan).
+    rapido: StrictBool | None = None
 
     def imagenes(self) -> list[str]:
         return [self.imagen] if self.imagen else []
@@ -314,6 +317,8 @@ class Encuesta(PreguntaDeOpciones):
     def _sin_correcta(cls, v: Any) -> Any:
         if isinstance(v, dict) and "correcta" in v:
             raise ValueError("una encuesta no tiene respuesta correcta: quita 'correcta'")
+        if isinstance(v, dict) and v.get("rapido") is True:
+            raise ValueError("una encuesta no puede ser rápida: quita 'rapido: true'")
         return v
 
     @property

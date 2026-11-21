@@ -218,6 +218,15 @@ function vistaAbiertaMultiple(d) {
   ];
 }
 
+// Pregunta rápida: el enunciado se ve antes que las opciones, que aparecen cuando el docente lo indique.
+function vistaEnunciado(d) {
+  return [
+    cabecera(d),
+    enunciado(d.pregunta),
+    el('p', { class: 'espera' }, 'pregunta rápida · prepárate: las respuestas aparecerán enseguida'),
+  ];
+}
+
 const MENSAJE_CATEGORIA = {
   acierto: ['ok', '✓ Tu respuesta era correcta.'],
   error: ['mal', '✗ Tu respuesta no era la correcta. Mira la pantalla.'],
@@ -251,6 +260,7 @@ function render(d) {
   let contenido;
   if (d.fase === 'abierta') contenido = vistaAbierta(d);
   else if (d.fase === 'cerrada') contenido = vistaCerrada(d);
+  else if (d.fase === 'enunciado') contenido = vistaEnunciado(d);
   else if (d.fase === 'sala') {
     contenido = [
       el('header', { class: 'cab' }, el('span', { class: 'eyebrow' }, d.tema.titulo)),

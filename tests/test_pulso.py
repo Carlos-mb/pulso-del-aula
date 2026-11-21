@@ -1467,3 +1467,135 @@ def test_sin_identificacion_cuentan_todos_los_conectados(ident):
     estado(alumno, token=TOKEN_A)
     estado(alumno, token=TOKEN_B)
     assert docente.get("/api/docente/estado").json()["conectados"] == 2
+
+
+# ---------- preguntas rápidas ----------
+RAPIDO = """
+temas:
+  rapido:
+    titulo: "Rápido"
+    rapido: true
+    tiempo: 10
+    preguntas:
+      - {texto: "r1", opciones: [x, y], correcta: 1}
+      - {texto: "n2", opciones: [x, y], correcta: 1, rapido: false, tiempo: 0}
+      - {tipo: encuesta, texto: "e3", opciones: [x, y]}
+      - {texto: "r4", opciones: [x, y], correcta: 2, tiempo: 5}
+  normal:
+    preguntas:
+      - {texto: "n1", opciones: [x, y], correcta: 1}
+      - {texto: "r2", opciones: [x, y], correcta: 1, rapido: true, tiempo: 8}
+"""
+
+
+@pytest.fixture
+def rapido(tmp_path, reloj):
+    d = escribe(tmp_path, RAPIDO)
+    app = crear_app(cargar(d), d, 8000, reloj=reloj)
+    with TestClient(app, client=("127.0.0.1", 5000)) as docente, \
+         TestClient(app, client=("192.168.1.50", 5000)) as alumno:
+        yield docente, alumno
+
+
+def test_herencia_de_rapido(tmp_path):
+    temas = cargar(escribe(tmp_path, RAPIDO))
+    r, n = temas["rapido"], temas["normal"]
+    assert [r.rapido_de(p) for p in r.preguntas] == [True, False, False, True]
+    assert [n.rapido_de(p) for p in n.preguntas] == [False, True]
+    assert [r.tiempo_de(p) for p in r.preguntas] == [10, 0, 10, 5]
+
+
+@pytest.mark.parametrize("contenido, mensaje", [
+    ("rapido: true\n    preguntas:\n      - {texto: a, opciones: [x, y], correcta: 1}", "rápida necesita tiempo"),
+    ("rapido: true\n    tiempo: 10\n    preguntas:\n      - {texto: a, opciones: [x, y], correcta: 1, tiempo: 0}",
+     "rápida necesita tiempo"),
+    ("preguntas:\n      - {texto: a, opciones: [x, y], correcta: 1, rapido: true}", "rápida necesita tiempo"),
+    ("tiempo: 10\n    preguntas:\n      - {tipo: encuesta, texto: a, opciones: [x, y], rapido: true}",
+     "encuesta no puede ser rápida"),
+    ("rapido: sí\n    preguntas:\n      - {texto: a, opciones: [x, y], correcta: 1}", "'rapido' debe ser true o false"),
+    ("preguntas:\n      - {texto: a, opciones: [x, y], correcta: 1, rapido: quizá}", "rapido"),
+])
+def test_errores_de_rapido(tmp_path, contenido, mensaje):
+    d = escribe(tmp_path, f"temas:\n  t:\n    {contenido}\n")
+    with pytest.raises(ErrorBanco, match=mensaje):
+        cargar(d)
+
+
+def test_enunciado_sin_opciones_ni_tiempo_hasta_mostrar(rapido, reloj):
+    docente, alumno = rapido
+    inicia(docente, "rapido")
+    e = estado(alumno, token=TOKEN_A)
+    assert e["fase"] == "enunciado"
+    assert e["pregunta"]["texto"] == "r1" and "opciones" not in e["pregunta"]
+    assert "tiempo" not in e
+    assert docente.get("/api/docente/estado").json()["duracion"] == 10
+    assert responde(alumno, TOKEN_A, 0).status_code == 409
+    reloj.t += 60                                   # el tiempo no corre en el enunciado
+    assert estado(alumno)["fase"] == "enunciado"
+    assert docente.post("/api/docente/mostrar").status_code == 200
+    e = estado(alumno, token=TOKEN_A)
+    assert e["fase"] == "abierta" and len(e["pregunta"]["opciones"]) == 2
+    assert e["tiempo"]["restante"] == 10
+    assert responde(alumno, TOKEN_A, 0).status_code == 200
+    reloj.t += 10
+    assert estado(alumno)["fase"] == "cerrada"
+
+
+def test_mostrar_fuera_del_enunciado_es_un_error(rapido):
+    docente, _ = rapido
+    inicia(docente, "normal")
+    assert estado(docente)["fase"] == "abierta"
+    assert docente.post("/api/docente/mostrar").status_code == 409
+
+
+def test_preguntas_normales_y_encuestas_en_tema_rapido(rapido):
+    docente, alumno = rapido
+    inicia(docente, "rapido")
+    docente.post("/api/docente/mostrar")
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+    assert estado(alumno)["fase"] == "abierta"      # rapido: false
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+    assert estado(alumno)["fase"] == "abierta"      # encuesta: no hereda
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+    e = estado(alumno)
+    assert e["fase"] == "enunciado" and e["pregunta"]["texto"] == "r4"
+    docente.post("/api/docente/mostrar")
+    assert estado(alumno)["tiempo"]["restante"] == 5
+
+
+def test_pregunta_rapida_en_tema_normal(rapido):
+    docente, alumno = rapido
+    inicia(docente, "normal")
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/siguiente")
+    assert estado(alumno)["fase"] == "enunciado"
+
+
+def test_reabrir_y_borrar_vuelven_al_enunciado(rapido):
+    docente, alumno = rapido
+    inicia(docente, "rapido")
+    docente.post("/api/docente/mostrar")
+    responde(alumno, TOKEN_A, 1)
+    docente.post("/api/docente/cerrar")
+    assert docente.post("/api/docente/abrir").status_code == 200
+    e = estado(alumno, token=TOKEN_A)
+    assert e["fase"] == "enunciado" and "mi_respuesta" not in e and e["n_respuestas"] == 1
+    docente.post("/api/docente/mostrar")
+    assert estado(alumno, token=TOKEN_A)["mi_respuesta"] == 1   # se conservan
+    assert docente.post("/api/docente/reiniciar").status_code == 200
+    e = estado(alumno)
+    assert e["fase"] == "enunciado" and e["n_respuestas"] == 0
+    assert docente.post("/api/docente/reiniciar").status_code == 200   # también desde el enunciado
+
+
+def test_desde_el_enunciado_se_puede_cambiar_de_pregunta(rapido):
+    docente, alumno = rapido
+    inicia(docente, "rapido")
+    assert docente.post("/api/docente/siguiente").status_code == 200
+    assert estado(alumno)["pregunta"]["texto"] == "n2"
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/anterior")
+    assert estado(alumno)["fase"] == "enunciado"   # no se había cerrado: vuelve a presentarse

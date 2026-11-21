@@ -194,6 +194,7 @@ def crear_app(
         "abrir": sesion.abrir,
         "cerrar": sesion.cerrar,
         "pausar": sesion.pausar,
+        "mostrar": sesion.mostrar_respuestas,
         "siguiente": sesion.siguiente,
         "anterior": sesion.anterior,
         "inicio": sesion.inicio,

@@ -11,6 +11,8 @@ Una votación se cierra sola en dos casos: cuando se agota el tiempo de la
 pregunta (si lo tiene) y cuando han votado todos los alumnos conectados. En una
 encuesta, además, al cerrarse porque han respondido todos se pasa sola a la
 siguiente pregunta (o al resumen, si era la última): sus resultados se ven en el resumen.
+El docente puede pausar la cuenta atrás: mientras está en pausa la votación sigue abierta
+pero no se cierra por tiempo; al reanudarla continúa desde lo que quedaba.
 Se comprueba al atender cada petición (los clientes consultan cada segundo),
 así que no hace falta ningún hilo temporizador. Si el docente reabre una
 pregunta, esta ya no se cierra por «todos han votado» (solo por tiempo o a mano).
@@ -81,6 +83,7 @@ class Sesion:
         # preguntas ya cerradas -> motivo ("docente" | "tiempo" | "todos"); no se reabren al navegar
         self.cerradas: dict[str, str] = {}
         self.limite: float | None = None  # instante en que se agota el tiempo
+        self.pausa_restante: float | None = None  # segundos que quedaban al pausar; None = sin pausa
         self.duracion = 0
         self.cierre_auto = True  # ¿se cierra al votar todos los conectados?
         # Alias de los alumnos (solo en los tests con identificación): {token: alias}
@@ -119,6 +122,20 @@ class Sesion:
             raise EstadoInvalido("Solo se puede reabrir una pregunta cerrada")
         self.cerradas.pop(self.pregunta.id, None)
         self._abrir_pregunta(cierre_auto=False)
+
+    def pausar(self) -> None:
+        """Pausa la cuenta atrás de la pregunta abierta, o la reanuda si ya estaba en pausa."""
+        self._tic(avanzar=False)
+        if self.fase != "abierta":
+            raise EstadoInvalido("La votación no está abierta")
+        if self.pausa_restante is not None:
+            self.limite = self.reloj() + self.pausa_restante
+            self.pausa_restante = None
+        elif self.limite is not None:
+            self.pausa_restante = max(0.0, self.limite - self.reloj())
+            self.limite = None
+        else:
+            raise EstadoInvalido("Esta pregunta no tiene tiempo")
 
     def reiniciar(self) -> None:
         """Borra las respuestas de la pregunta actual y la abre de nuevo."""
@@ -276,11 +293,13 @@ class Sesion:
         self.cierre_auto = cierre_auto
         self.duracion = self.tema.tiempo_de(self.pregunta)
         self.limite = self.reloj() + self.duracion if self.duracion else None
+        self.pausa_restante = None
 
     def _cerrar_pregunta(self, motivo: str) -> None:
         self.fase = "cerrada"
         self.cerradas[self.pregunta.id] = motivo
         self.limite = None
+        self.pausa_restante = None
 
     def _todos_han_votado(self) -> bool:
         """Hay alumnos conectados y todos ellos han respondido a la pregunta actual."""
@@ -392,10 +411,14 @@ class Sesion:
                 v["indice"] = self.indice
                 v["n_respuestas"] = len(resp)
                 v["pregunta"] = p.publica()
-                if self.fase == "abierta" and self.limite is not None:
+                if self.fase == "abierta" and self.pausa_restante is not None:
+                    v["tiempo"] = {"total": self.duracion, "restante": round(self.pausa_restante, 2),
+                                   "pausado": True}
+                elif self.fase == "abierta" and self.limite is not None:
                     v["tiempo"] = {
                         "total": self.duracion,
                         "restante": round(max(0.0, self.limite - self.reloj()), 2),
+                        "pausado": False,
                     }
                 if self.fase == "cerrada":
                     v["resultados"] = p.resultados(list(resp.values()))

@@ -207,7 +207,7 @@ def test_el_tiempo_se_agota_y_cierra_la_votacion(cliente, reloj):
     docente, alumno = cliente
     inicia(docente, "redes")              # tema: 30 s
     e = estado(alumno)
-    assert e["tiempo"] == {"total": 30, "restante": 30.0}
+    assert e["tiempo"] == {"total": 30, "restante": 30.0, "pausado": False}
 
     reloj.t += 29
     assert estado(alumno)["tiempo"]["restante"] == 1.0
@@ -237,6 +237,52 @@ def test_sin_tiempo_no_hay_cuenta_atras(cliente, reloj):
     reloj.t += 10_000
     e = estado(alumno)
     assert e["fase"] == "abierta" and "tiempo" not in e
+
+
+def test_pausar_congela_el_tiempo_y_reanudar_continua(cliente, reloj):
+    docente, alumno = cliente
+    inicia(docente, "redes")              # 30 s
+    reloj.t += 10
+    assert docente.post("/api/docente/pausar").status_code == 200
+    reloj.t += 1000                                       # en pausa no se agota
+    e = estado(alumno)
+    assert e["fase"] == "abierta"
+    assert e["tiempo"] == {"total": 30, "restante": 20.0, "pausado": True}
+    assert responde(alumno, TOKEN_A, 1).status_code == 200   # se puede votar en pausa
+
+    assert docente.post("/api/docente/pausar").status_code == 200   # reanuda
+    assert estado(alumno)["tiempo"] == {"total": 30, "restante": 20.0, "pausado": False}
+    reloj.t += 21
+    e = estado(alumno)
+    assert e["fase"] == "cerrada" and e["motivo_cierre"] == "tiempo"
+
+
+def test_en_pausa_sigue_cerrando_cuando_votan_todos(cliente, reloj):
+    docente, alumno = cliente
+    inicia(docente, "redes")
+    estado(alumno, token=TOKEN_A)                         # conectado
+    docente.post("/api/docente/pausar")
+    responde(alumno, TOKEN_A, 1)
+    e = estado(alumno, token=TOKEN_A)
+    assert e["fase"] == "cerrada" and e["motivo_cierre"] == "todos"
+
+
+def test_pausar_sin_tiempo_o_cerrada_es_un_error(cliente, reloj):
+    docente, alumno = cliente
+    inicia(docente, "imagenes")           # sin límite
+    assert docente.post("/api/docente/pausar").status_code == 409
+    docente.post("/api/docente/cerrar")
+    assert docente.post("/api/docente/pausar").status_code == 409
+
+
+def test_reabrir_tras_pausar_empieza_sin_pausa(cliente, reloj):
+    docente, alumno = cliente
+    inicia(docente, "redes")
+    reloj.t += 10
+    docente.post("/api/docente/pausar")
+    docente.post("/api/docente/cerrar")
+    docente.post("/api/docente/abrir")
+    assert estado(alumno)["tiempo"] == {"total": 30, "restante": 30.0, "pausado": False}
 
 
 def test_reabrir_reinicia_el_tiempo(cliente, reloj):

@@ -47,8 +47,8 @@ function avisoError() {
 // ---------- cuenta atrás ----------
 // El servidor envía los segundos restantes en cada consulta; entre consultas
 // la cuenta avanza en local. Ese valor no cuenta como "cambio" (ver firma) para
-// no redibujar la página cada segundo.
-let finCuenta = null;
+// no redibujar la página cada segundo. En pausa la cuenta queda fija (`cuentaFija`).
+let finCuenta = null, cuentaFija = null;
 
 function formatoTiempo(s) {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -56,27 +56,36 @@ function formatoTiempo(s) {
 
 function pintarCuenta() {
   const e = document.getElementById('cuenta');
-  if (!e || finCuenta === null) return;
+  if (!e) return;
+  if (cuentaFija !== null) {
+    e.textContent = formatoTiempo(cuentaFija);
+    e.parentElement.classList.remove('urgente');
+    return;
+  }
+  if (finCuenta === null) return;
   const s = Math.max(0, Math.ceil((finCuenta - performance.now()) / 1000));
   e.textContent = formatoTiempo(s);
   e.parentElement.classList.toggle('urgente', s <= 5);
 }
 
-function fijarCuenta(restante) {
-  finCuenta = restante == null ? null : performance.now() + restante * 1000;
+function fijarCuenta(restante, pausado) {
+  cuentaFija = restante != null && pausado ? Math.ceil(restante) : null;
+  finCuenta = restante == null || pausado ? null : performance.now() + restante * 1000;
   pintarCuenta();
 }
 setInterval(pintarCuenta, 250);
 
 function reloj(d) {
-  return d.tiempo && el('span', { class: 'reloj' }, el('span', { id: 'cuenta' }, ''));
+  return d.tiempo && el('span', { class: 'reloj' + (d.tiempo.pausado ? ' pausado' : '') },
+    d.tiempo.pausado && el('span', { class: 'icono-pausa', title: 'tiempo en pausa' }, '⏸ '),
+    el('span', { id: 'cuenta' }, ''));
 }
 
 const SIN_ACCESO = 'sin-acceso';
 
 function firma(datos) {
   const c = { ...datos };
-  if (c.tiempo) c.tiempo = { total: c.tiempo.total };
+  if (c.tiempo) c.tiempo = { total: c.tiempo.total, pausado: c.tiempo.pausado };
   return JSON.stringify(c);
 }
 
@@ -104,7 +113,7 @@ function sondear(url, render, ms = 1000, sinAcceso = null) {
         try { render(datos); falloAlDibujar = false; }
         catch (err) { console.error('Error al dibujar la pantalla:', err); falloAlDibujar = true; }
       }
-      fijarCuenta(datos.tiempo ? datos.tiempo.restante : null);
+      fijarCuenta(datos.tiempo ? datos.tiempo.restante : null, datos.tiempo && datos.tiempo.pausado);
       if (falloAlDibujar) avisoError(); else avisoConexion(false);
     } catch (e) {
       if (mia !== gen) return;

@@ -1,7 +1,7 @@
 // Vista única del docente: lo que se proyecta y, ocultos, los controles.
 // Atajos: Espacio/Intro = acción principal · ← → = anterior/siguiente ·
 //         Esc = volver a los temas · 1-9 = elegir tema (en la pantalla inicial) ·
-//         H = ocultar / mostrar la barra de controles
+//         H = ocultar / mostrar la barra de controles · P = pausar / reanudar el tiempo
 
 const app = document.getElementById('app');
 const pie = document.getElementById('pie');
@@ -274,6 +274,7 @@ function actualizarBarra(d) {
     b.push(boton('Empezar el test ▶', () => ejecutar('empezar'), 'principal'));
   } else if (d.fase === 'abierta') {
     b.push(boton('Cerrar votación', () => ejecutar('cerrar'), 'principal'));
+    if (d.tiempo) b.push(boton(d.tiempo.pausado ? '▶ Reanudar tiempo' : '⏸ Pausar tiempo', () => ejecutar('pausar')));
     b.push(boton('Borrar respuestas', borrar));
   } else if (d.fase === 'cerrada') {
     if (d.indice > 0) b.push(boton('◀ Anterior', () => ejecutar('anterior')));
@@ -287,7 +288,7 @@ function actualizarBarra(d) {
   }
   if (d.fase !== 'inicio') b.push(boton('Temas', () => ejecutar('inicio')));
   b.push(boton('Ocultar ▼', () => ponerBarraOculta(true)));
-  b.push(el('span', { class: 'atajos' }, 'Espacio: avanzar · ← →: pregunta · Esc: temas · H: ocultar'));
+  b.push(el('span', { class: 'atajos' }, 'Espacio: avanzar · ← →: pregunta · P: pausar tiempo · Esc: temas · H: ocultar'));
   barra.replaceChildren(...b);
 }
 
@@ -327,6 +328,7 @@ document.addEventListener('keydown', e => {
   const enTema = vista.fase !== 'inicio';
   if (e.key === 'h' || e.key === 'H') ponerBarraOculta(!barraOculta);
   else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); accionPrincipal(); }
+  else if ((e.key === 'p' || e.key === 'P') && vista.fase === 'abierta' && vista.tiempo) ejecutar('pausar');
   else if (e.key === 'ArrowRight' && enTema) ejecutar('siguiente');
   else if (e.key === 'ArrowLeft' && enTema) ejecutar('anterior');
   else if (e.key === 'Escape' && enTema) ejecutar('inicio');

@@ -193,6 +193,7 @@ def crear_app(
         "empezar": sesion.empezar,
         "abrir": sesion.abrir,
         "cerrar": sesion.cerrar,
+        "pausar": sesion.pausar,
         "siguiente": sesion.siguiente,
         "anterior": sesion.anterior,
         "inicio": sesion.inicio,

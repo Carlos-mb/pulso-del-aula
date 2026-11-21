@@ -91,7 +91,9 @@ Opciones: `--preguntas CARPETA` (por defecto `./preguntas`), `--puerto N`, `--ho
 2. **Sala de espera:** se proyecta el número de personas conectadas y la URL de acceso. Los alumnos ven
    «✓ Conectado». Cuando estén todos, el docente pulsa `Espacio` para empezar.
 3. **La pregunta se presenta y la votación se abre sola.** Si tiene tiempo, aparece una cuenta atrás
-   en la esquina superior derecha, también en la pantalla de los alumnos. Las siguientes preguntas
+   en la esquina superior derecha, también en la pantalla de los alumnos. El docente puede **pausar el
+   tiempo** (botón «Pausar tiempo» o tecla `P`) y reanudarlo después: mientras está en pausa la cuenta
+   queda detenida (con ⏸ en ambas pantallas), pero la votación sigue abierta. Las siguientes preguntas
    también se abren solas al avanzar.
 4. La votación se cierra, y se muestran los resultados, en el primero de estos casos:
    - **han votado todos los alumnos conectados** (aunque quede tiempo),
@@ -153,6 +155,7 @@ La barra de controles aparece al mover el ratón y se oculta sola a los 3 segund
 | `←` / `→` | Pregunta anterior / siguiente (con la votación cerrada) |
 | `Esc` | Volver a la lista de temas |
 | `1`–`9` | Elegir tema (pantalla inicial) |
+| `P` | Pausar / reanudar el tiempo (votación abierta con tiempo) |
 | `H` | Ocultar / mostrar la barra de controles |
 
 - Volver a una pregunta ya cerrada conserva sus resultados y **no** la reabre.

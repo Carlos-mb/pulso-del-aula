@@ -75,6 +75,7 @@ img { max-width: 100%; }
 .cab-der { display: inline-flex; align-items: center; gap: 1em; }
 .reloj { color: var(--amber); font-weight: 900; font-size: 1.5em; }
 .reloj.urgente { color: var(--coral); animation: parpadeo 1s steps(2, start) infinite; }
+.reloj.pausado { color: var(--muted); }
 @keyframes parpadeo { 50% { opacity: .35; } }
 
 .enunciado {

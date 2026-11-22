@@ -35,6 +35,23 @@ py -m venv .venv
 .venv\Scripts\pip install -e .
 ```
 
+**Alternativa: lanzadores `pulso.sh` (Linux/macOS) y `pulso.cmd` (Windows).** Solo hace falta Git:
+la primera vez descargan `uv` dentro del proyecto (`.tools/` o `tools\`), y `uv` prepara Python y las
+dependencias en el entorno virtual que indiques; las siguientes veces lo reutilizan.
+
+```bash
+./pulso.sh --venv ~/.venvs/pulsodelaula                  # Linux / macOS
+pulso.cmd --venv %USERPROFILE%\.venvs\pulsodelaula       # Windows
+./pulso.sh --venv ~/.venvs/pulsodelaula --puerto 8001    # el resto de opciones van a pulso
+./pulso.sh -- --help                                     # ayuda de pulso (-h: la del lanzador)
+```
+
+Para no escribir `--venv` cada vez, copia `.env.example` como `.env` y ajusta `PULSO_VENV` (`--venv`
+tiene prioridad). Si el directorio no existe, el lanzador pregunta antes de crearlo; si existe pero
+no es un entorno virtual, no lo toca. Una ruta relativa en `--venv` se toma desde donde lanzas el
+script; en `.env`, desde la carpeta del proyecto. Con OneDrive, pon el entorno fuera de la carpeta
+sincronizada.
+
 Para actualizar más adelante: `git pull` dentro de la carpeta (no hay que reinstalar). Si el servidor
 estaba en marcha, hay que pararlo y volver a arrancarlo para que cargue el código nuevo. Las pantallas
 que estuvieran abiertas (docente y alumnos) se recargan solas en cuanto el servidor vuelve a estar en marcha.

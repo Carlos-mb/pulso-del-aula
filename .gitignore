@@ -15,3 +15,16 @@ dist/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Lanzador de Linux/macOS (uv y Python descargados dentro del proyecto)
+.tools/
+.python/
+.uv-cache/
+
+# Lanzador de Windows (uv y Python descargados dentro del proyecto)
+/tools/
+/python/
+/uv-cache/
+
+# Configuración local de los lanzadores (plantilla: .env.example)
+.env
